@@ -1,0 +1,53 @@
+# ═══════════════════════════════════════════════════════════
+#  docker-compose.yml — URL Shortener + Analytics Platform
+#
+#  SKELETON — services are added phase by phase:
+#
+#  Phase 1  → structure only (this file)
+#  Phase 6  → Dockerfiles + full service definitions
+#  Phase 7  → NGINX gateway added
+#
+#  To start everything (Phase 6+):
+#    docker-compose up --build
+# ═══════════════════════════════════════════════════════════
+
+version: "3.9"
+
+# ─── Networks ───────────────────────────────────────────────
+networks:
+  app-network:
+    driver: bridge
+
+# ─── Volumes ────────────────────────────────────────────────
+volumes:
+  pgdata:
+  redisdata:
+  mongodata:
+  rabbitmqdata:
+
+# ─── Services ───────────────────────────────────────────────
+services:
+
+  # ── NGINX Gateway ─────────────────────── added in PR-22 ──
+  # nginx:
+
+  # ── Auth Service ──────────────────────── added in PR-20 ──
+  # auth-service:
+
+  # ── URL Service ───────────────────────── added in PR-20 ──
+  # url-service:
+
+  # ── Analytics Worker ──────────────────── added in PR-20 ──
+  # analytics-worker:
+
+  # ── PostgreSQL ────────────────────────── added in PR-21 ──
+  # postgres:
+
+  # ── Redis ─────────────────────────────── added in PR-21 ──
+  # redis:
+
+  # ── MongoDB ───────────────────────────── added in PR-21 ──
+  # mongodb:
+
+  # ── RabbitMQ ──────────────────────────── added in PR-21 ──
+  # rabbitmq:
