@@ -21,9 +21,10 @@ const config: Config = {
   transform: {
     "^.+\\.ts$": "ts-jest",
   },
+  setupFiles: ["<rootDir>/src/__tests__/setup.ts"],
   // ✅ REMOVED invalid mockResetManager
   clearMocks: true, // ✅ Resets mocks between tests
-  resetMocks: true, // ✅ Resets all mocks before each test
+  // resetMocks: true, // ✅ Resets all mocks before each test
   restoreMocks: true, // ✅ Restores original implementations
 };
 

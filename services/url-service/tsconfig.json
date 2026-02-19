@@ -1,34 +1,23 @@
 {
   "compilerOptions": {
-    // ─── Output ──────────────────────────────────────────
     "outDir": "./dist",
     "rootDir": "./src",
-
-    // ─── Language ─────────────────────────────────────────
     "target": "ES2020",
     "module": "commonjs",
     "lib": ["ES2020"],
-
-    // ─── Module Resolution ────────────────────────────────
     "moduleResolution": "node",
+    "ignoreDeprecations": "6.0",
     "esModuleInterop": true,
     "resolveJsonModule": true,
-    "ignoreDeprecations": "6.0",
-
-    // ─── Strictness ───────────────────────────────────────
-    // These catch the most bugs at compile time
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
-
-    // ─── Dev Experience ───────────────────────────────────
     "sourceMap": true,
     "skipLibCheck": true,
-    "noEmit": true,
     "types": ["node", "jest"],
     "typeRoots": ["./node_modules/@types"]
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "**/__tests__/**"]
+  "exclude": ["node_modules", "dist"]
 }
