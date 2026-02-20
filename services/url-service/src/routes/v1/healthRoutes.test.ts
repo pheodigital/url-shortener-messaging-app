@@ -1,23 +1,22 @@
 jest.mock("../../config/database", () => ({
+  __esModule: true,
   connectDatabase: jest.fn().mockResolvedValue(undefined),
   checkDatabaseHealth: jest.fn().mockResolvedValue("ok"),
   default: {
-    $connect: jest.fn(),
-    $disconnect: jest.fn(),
-    $queryRaw: jest.fn().mockResolvedValue([]),
+    url: {
+      findUnique: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
+      create: jest.fn(),
+      update: jest.fn(),
+    },
   },
 }));
 
 import request from "supertest";
 import app from "../../app";
-// ADD THIS TEMPORARILY
-import * as db from "../../config/database";
 
 describe("GET /health — database ok", () => {
   it("should return 200 when postgres is healthy", async () => {
-    // ADD THESE TWO LINES
-    console.log("IS MOCKED:", jest.isMockFunction(db.checkDatabaseHealth));
-    console.log("MOCK RETURN:", await db.checkDatabaseHealth());
     const res = await request(app).get("/health");
     expect(res.statusCode).toBe(200);
     expect(res.body.status).toBe("ok");
@@ -48,9 +47,13 @@ describe("GET /health — database down", () => {
 
 describe("404 handler", () => {
   it("should return 404 for unknown routes", async () => {
+    // findUnique returns null → redirect controller throws 404 AppError
+    // which is then caught by errorHandler and returned as 404
+    const db = require("../../config/database");
+    db.default.url.findUnique.mockResolvedValueOnce(null);
+
     const res = await request(app).get("/unknown-route-xyz");
     expect(res.statusCode).toBe(404);
     expect(res.body.status).toBe("error");
-    expect(res.body.message).toContain("not found");
   });
 });

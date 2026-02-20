@@ -17,6 +17,7 @@ const config: Config = {
   // setupFilesAfterEnv: ["<rootDir>/tests/setup.ts"],
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/src/$1",
+    "^.*/config/database$": "<rootDir>/src/config/database.ts",
   },
   transform: {
     "^.+\\.ts$": "ts-jest",
