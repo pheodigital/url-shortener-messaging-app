@@ -14,6 +14,7 @@ import env from "./env";
 let redis: Redis | undefined;
 
 const createRedisClient = (): Redis => {
+  // console.upstash.com provides a Redis URL with SSL (rediss://) and built-in retry strategy.
   const client = new Redis(env.REDIS_URL as string, {
     // ─── Reconnection Strategy ─────────────────────────
     // Retry with exponential backoff up to 10 seconds

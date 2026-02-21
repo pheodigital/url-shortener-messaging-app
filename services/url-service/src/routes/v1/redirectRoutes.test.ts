@@ -1,12 +1,9 @@
 // ─── Mocks must be declared before any imports ────────────
-// jest.mock is hoisted to the top by Jest automatically
-// moduleNameMapper in jest.config.js ensures "../config/database"
-// and "../../config/database" resolve to the same mock
 const mockPrisma = {
   url: {
     create: jest.fn(),
     findMany: jest.fn(),
-    findUnique: jest.fn(),
+    findUnique: jest.fn().mockResolvedValue(null),
     update: jest.fn(),
   },
 };
@@ -25,13 +22,41 @@ jest.mock("../../config/redis", () => ({
   getRedis: jest.fn(),
 }));
 
+// ─── Mock cache helpers ───────────────────────────────────
+// Cache is mocked at the helper level — we test the controller
+// logic not the Redis commands themselves
+jest.mock("../../config/cache", () => ({
+  getCachedUrl: jest.fn().mockResolvedValue(null), // default: cache MISS
+  setCachedUrl: jest.fn().mockResolvedValue(undefined),
+  invalidateCachedUrl: jest.fn().mockResolvedValue(undefined),
+}));
+
 import request from "supertest";
 import app from "../../app";
+import * as cache from "../../config/cache";
 
 // ─── GET /:shortcode ──────────────────────────────────────
 describe("GET /:shortcode — redirect", () => {
-  it("should return 302 and redirect to longUrl", async () => {
-    (mockPrisma.url.findUnique as jest.Mock).mockResolvedValue({
+  it("should return 302 via cache HIT without querying DB", async () => {
+    // Simulate cache HIT — longUrl found in Redis
+    (cache.getCachedUrl as jest.Mock).mockResolvedValueOnce(
+      "https://www.google.com",
+    );
+
+    const res = await request(app).get("/abc1234");
+
+    expect(res.statusCode).toBe(302);
+    expect(res.headers["location"]).toBe("https://www.google.com");
+
+    // DB should NOT be called on cache hit
+    expect(mockPrisma.url.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("should return 302 via DB on cache MISS and populate cache", async () => {
+    // Cache MISS — falls through to DB
+    (cache.getCachedUrl as jest.Mock).mockResolvedValueOnce(null);
+
+    mockPrisma.url.findUnique.mockResolvedValueOnce({
       longUrl: "https://www.google.com",
       isActive: true,
     });
@@ -40,10 +65,17 @@ describe("GET /:shortcode — redirect", () => {
 
     expect(res.statusCode).toBe(302);
     expect(res.headers["location"]).toBe("https://www.google.com");
+
+    // Cache should be populated after DB lookup
+    expect(cache.setCachedUrl).toHaveBeenCalledWith(
+      "abc1234",
+      "https://www.google.com",
+    );
   });
 
   it("should return 404 when shortcode does not exist", async () => {
-    (mockPrisma.url.findUnique as jest.Mock).mockResolvedValue(null);
+    (cache.getCachedUrl as jest.Mock).mockResolvedValueOnce(null);
+    mockPrisma.url.findUnique.mockResolvedValueOnce(null);
 
     const res = await request(app).get("/doesnotexist");
 
@@ -53,7 +85,8 @@ describe("GET /:shortcode — redirect", () => {
   });
 
   it("should return 410 when URL has been soft deleted", async () => {
-    (mockPrisma.url.findUnique as jest.Mock).mockResolvedValue({
+    (cache.getCachedUrl as jest.Mock).mockResolvedValueOnce(null);
+    mockPrisma.url.findUnique.mockResolvedValueOnce({
       longUrl: "https://www.google.com",
       isActive: false,
     });
@@ -67,16 +100,13 @@ describe("GET /:shortcode — redirect", () => {
 
   it("should not interfere with /health route", async () => {
     const res = await request(app).get("/health");
-
     expect(res.statusCode).toBe(200);
     expect(res.body.service).toBe("url-service");
   });
 
   it("should not interfere with /api/urls route", async () => {
-    (mockPrisma.url.findMany as jest.Mock).mockResolvedValue([]);
-
+    mockPrisma.url.findMany.mockResolvedValueOnce([]);
     const res = await request(app).get("/api/urls");
-
     expect(res.statusCode).toBe(200);
     expect(res.body.status).toBe("success");
   });

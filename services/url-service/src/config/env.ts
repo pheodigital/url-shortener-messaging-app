@@ -20,7 +20,7 @@ const envSchema = z.object({
   DATABASE_URL: z.string().optional(),
 
   // Redis — required from PR-07 onwards
-  REDIS_URL: z.string().optional(),
+  REDIS_URL: z.string({ required_error: "REDIS_URL is required" }),
   CACHE_TTL_SECONDS: z.string().default("86400").transform(Number),
 
   // RabbitMQ — required from PR-14 onwards

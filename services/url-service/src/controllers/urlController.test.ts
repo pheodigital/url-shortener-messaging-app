@@ -1,5 +1,5 @@
 // ─── Mocks must be declared before any imports ────────────
-// From src/controllers/ → one level up → src/config/database
+// From src/controllers/ → one level up → src/config/
 const mockPrisma = {
   url: {
     create: jest.fn(),
@@ -23,13 +23,18 @@ jest.mock("../config/redis", () => ({
   getRedis: jest.fn(),
 }));
 
+jest.mock("../config/cache", () => ({
+  getCachedUrl: jest.fn().mockResolvedValue(null),
+  setCachedUrl: jest.fn().mockResolvedValue(undefined),
+  invalidateCachedUrl: jest.fn().mockResolvedValue(undefined),
+}));
+
 import { Request, Response } from "express";
 import { createUrl, listUrls, deleteUrl } from "./urlController";
 import { AppError } from "../middleware/errorHandler";
+import * as cache from "../config/cache";
 
 // ─── Helpers ──────────────────────────────────────────────
-// Pure unit tests — no HTTP layer, no Supertest
-// Call controller functions directly with mocked req/res
 const mockReq = (overrides: Partial<Request> = {}): Partial<Request> => ({
   body: {},
   params: {},
@@ -145,7 +150,7 @@ describe("listUrls controller", () => {
 
 // ─── deleteUrl ────────────────────────────────────────────
 describe("deleteUrl controller", () => {
-  it("should soft delete URL and return 200", async () => {
+  it("should soft delete URL and invalidate cache", async () => {
     mockPrisma.url.findUnique.mockResolvedValue({
       id: "uuid-1",
       shortcode: "abc1234",
@@ -169,12 +174,15 @@ describe("deleteUrl controller", () => {
       }),
     );
 
-    // Verify it is a soft delete — isActive set to false not row removed
+    // Verify soft delete
     expect(mockPrisma.url.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: { isActive: false },
       }),
     );
+
+    // Verify cache invalidation — key must be removed on delete
+    expect(cache.invalidateCachedUrl).toHaveBeenCalledWith("abc1234");
   });
 
   it("should throw AppError 404 when URL does not exist", async () => {
