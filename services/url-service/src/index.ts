@@ -1,10 +1,11 @@
 import env from "./config/env";
 import logger from "./config/logger";
 import { connectDatabase } from "./config/database";
+import { connectRedis } from "./config/redis";
 import app from "./app";
 
 const bootstrap = async (): Promise<void> => {
-  await connectDatabase();
+  await Promise.all([connectDatabase(), connectRedis()]);
 
   const server = app.listen(env.PORT, () => {
     logger.info(`url-service running on port ${env.PORT}`, {

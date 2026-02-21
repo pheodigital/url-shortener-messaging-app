@@ -16,6 +16,13 @@ jest.mock("../config/database", () => ({
   default: mockPrisma,
 }));
 
+jest.mock("../config/redis", () => ({
+  __esModule: true,
+  connectRedis: jest.fn().mockResolvedValue(undefined),
+  checkRedisHealth: jest.fn().mockResolvedValue("ok"),
+  getRedis: jest.fn(),
+}));
+
 import { Request, Response } from "express";
 import { createUrl, listUrls, deleteUrl } from "./urlController";
 import { AppError } from "../middleware/errorHandler";

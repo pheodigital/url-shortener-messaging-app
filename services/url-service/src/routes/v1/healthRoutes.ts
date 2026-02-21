@@ -1,5 +1,7 @@
 import { Router, Request, Response } from "express";
+
 import { checkDatabaseHealth } from "../../config/database";
+import { checkRedisHealth } from "../../config/redis";
 
 const router = Router();
 
@@ -14,10 +16,12 @@ const router = Router();
 //   PR-07           → redis
 //   PR-14           → rabbitmq
 router.get("/health", async (req: Request, res: Response) => {
-  const postgres = await checkDatabaseHealth();
+  const [postgres, redis] = await Promise.all([
+    checkDatabaseHealth(),
+    checkRedisHealth(),
+  ]);
 
-  // If any critical dependency is down → return 503
-  const isHealthy = postgres === "ok";
+  const isHealthy = postgres === "ok" && redis === "ok";
 
   res.status(isHealthy ? 200 : 503).json({
     status: isHealthy ? "ok" : "degraded",
@@ -25,8 +29,7 @@ router.get("/health", async (req: Request, res: Response) => {
     timestamp: new Date().toISOString(),
     dependencies: {
       postgres,
-      // redis    → added in PR-07
-      // rabbitmq → added in PR-14
+      redis,
     },
   });
 });

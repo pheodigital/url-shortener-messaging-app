@@ -1,3 +1,4 @@
+// ─── Mocks must be declared before any imports ────────────
 jest.mock("../../config/database", () => ({
   __esModule: true,
   connectDatabase: jest.fn().mockResolvedValue(undefined),
@@ -12,17 +13,32 @@ jest.mock("../../config/database", () => ({
   },
 }));
 
+jest.mock("../../config/redis", () => ({
+  __esModule: true,
+  connectRedis: jest.fn().mockResolvedValue(undefined),
+  checkRedisHealth: jest.fn().mockResolvedValue("ok"),
+  getRedis: jest.fn(),
+  default: null,
+}));
+
 import request from "supertest";
 import app from "../../app";
 
+// ─── Health Endpoint — all dependencies ok ────────────────
 describe("GET /health — database ok", () => {
-  it("should return 200 when postgres is healthy", async () => {
+  it("should return 200 when postgres and redis are healthy", async () => {
     const res = await request(app).get("/health");
+
+    console.log("STATUS:", res.statusCode);
+    console.log("BODY:", JSON.stringify(res.body));
+    console.log("TEXT:", res.text);
+
     expect(res.statusCode).toBe(200);
     expect(res.body.status).toBe("ok");
     expect(res.body.service).toBe("url-service");
     expect(res.body.timestamp).toBeDefined();
     expect(res.body.dependencies.postgres).toBe("ok");
+    expect(res.body.dependencies.redis).toBe("ok");
   });
 
   it("should return a valid ISO timestamp", async () => {
@@ -32,9 +48,9 @@ describe("GET /health — database ok", () => {
   });
 });
 
+// ─── Health Endpoint — postgres down ─────────────────────
 describe("GET /health — database down", () => {
   it("should return 503 when postgres is down", async () => {
-    // ─── from src/routes/v1/ → up 2 levels → src/ → config/database
     const db = require("../../config/database");
     db.checkDatabaseHealth.mockResolvedValueOnce("error");
 
@@ -45,13 +61,22 @@ describe("GET /health — database down", () => {
   });
 });
 
+// ─── Health Endpoint — redis down ────────────────────────
+describe("GET /health — redis down", () => {
+  it("should return 503 when redis is down", async () => {
+    const redis = require("../../config/redis");
+    redis.checkRedisHealth.mockResolvedValueOnce("error");
+
+    const res = await request(app).get("/health");
+    expect(res.statusCode).toBe(503);
+    expect(res.body.status).toBe("degraded");
+    expect(res.body.dependencies.redis).toBe("error");
+  });
+});
+
+// ─── 404 handler ─────────────────────────────────────────
 describe("404 handler", () => {
   it("should return 404 for unknown routes", async () => {
-    // findUnique returns null → redirect controller throws 404 AppError
-    // which is then caught by errorHandler and returned as 404
-    const db = require("../../config/database");
-    db.default.url.findUnique.mockResolvedValueOnce(null);
-
     const res = await request(app).get("/unknown-route-xyz");
     expect(res.statusCode).toBe(404);
     expect(res.body.status).toBe("error");

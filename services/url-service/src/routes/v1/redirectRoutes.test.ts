@@ -18,6 +18,13 @@ jest.mock("../../config/database", () => ({
   default: mockPrisma,
 }));
 
+jest.mock("../../config/redis", () => ({
+  __esModule: true,
+  connectRedis: jest.fn().mockResolvedValue(undefined),
+  checkRedisHealth: jest.fn().mockResolvedValue("ok"),
+  getRedis: jest.fn(),
+}));
+
 import request from "supertest";
 import app from "../../app";
 
