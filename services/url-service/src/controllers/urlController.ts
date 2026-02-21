@@ -1,7 +1,8 @@
 import { Request, Response } from "express";
 import { nanoid } from "nanoid";
+
 import prisma from "../config/database";
-import { invalidateCachedUrl } from "../config/cache";
+import { invalidateCachedUrl, warmCache } from "../config/cache";
 import env from "../config/env";
 import logger from "../config/logger";
 import { AppError } from "../middleware/errorHandler";
@@ -31,13 +32,9 @@ export const createUrl = async (req: Request, res: Response): Promise<void> => {
     shortcode = nanoid(7);
   }
 
-  const url = await prisma.url.create({
-    data: {
-      shortcode,
-      longUrl,
-      // userId: req.user.id  ← added in PR-13
-    },
-  });
+  const url = await prisma.url.create({ data: { shortcode, longUrl } });
+
+  await warmCache(shortcode, longUrl);
 
   logger.info("URL created", { shortcode, longUrl });
 

@@ -27,6 +27,7 @@ jest.mock("../config/cache", () => ({
   getCachedUrl: jest.fn().mockResolvedValue(null),
   setCachedUrl: jest.fn().mockResolvedValue(undefined),
   invalidateCachedUrl: jest.fn().mockResolvedValue(undefined),
+  warmCache: jest.fn().mockResolvedValue(undefined),
 }));
 
 import { Request, Response } from "express";
@@ -62,8 +63,8 @@ describe("createUrl controller", () => {
     const res = mockRes();
 
     await createUrl(req as Request, res as Response);
-
     expect(res.status).toHaveBeenCalledWith(201);
+
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({
         status: "success",
@@ -73,6 +74,12 @@ describe("createUrl controller", () => {
           shortUrl: expect.stringContaining("abc1234"),
         }),
       }),
+    );
+
+    // PR-09: cache must be warmed immediately after creation
+    expect(cache.warmCache).toHaveBeenCalledWith(
+      expect.any(String),
+      "https://www.google.com",
     );
   });
 
