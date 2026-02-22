@@ -1,0 +1,54 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String?
+  googleId  String?  @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  urls      Url[]
+
+  // @@map tells Prisma the actual table name in PostgreSQL
+  // Without this, Prisma would create a table called "User" (capital U)
+  // Convention is lowercase plural for table names
+  @@map("users")
+}
+
+model Url {
+  id        String   @id @default(uuid())
+  shortcode String   @unique
+  longUrl   String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  // @@index creates a database index on this column
+  // userId is indexed because GET /api/urls queries "give me all URLs for this user"
+  // Without this index → PostgreSQL scans every row in the table (slow at scale)
+  // With this index    → PostgreSQL jumps directly to that user's rows (fast)
+  @@index([userId])
+
+  // Composite index on two columns together
+  // Used when querying: "give me all ACTIVE urls sorted by date"
+  // WHERE isActive = true ORDER BY createdAt DESC
+  // PostgreSQL uses both columns together from this single index
+  // More efficient than two separate single-column indexes for this query
+  @@index([isActive, createdAt])
+
+  // Same as @@map("users") above — actual PostgreSQL table name is "urls"
+  // Keeps naming consistent: lowercase plural throughout the database
+  // "in PostgreSQL call this table urls not Url"
+  @@map("urls")
+}
