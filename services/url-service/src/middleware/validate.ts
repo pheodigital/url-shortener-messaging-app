@@ -22,7 +22,7 @@ export const validate =
       // It also TRANSFORMS the data (e.g. trimming strings)
       // and replaces req.body with the cleaned version
       req.body = schema.parse(req.body);
-      next();
+      next(); // next() is used to pass control to the next middleware or route handler
     } catch (error) {
       if (error instanceof ZodError) {
         // Pass to global errorHandler which formats ZodError responses

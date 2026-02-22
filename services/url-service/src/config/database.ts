@@ -50,7 +50,7 @@ export const connectDatabase = async (): Promise<void> => {
 // Returns "ok" or "error" — never throws.
 export const checkDatabaseHealth = async (): Promise<"ok" | "error"> => {
   try {
-    await prisma.$queryRaw`SELECT 1`;
+    await prisma.$queryRaw`SELECT 1`; // Select 1 is a simple, fast query to check connectivity
     return "ok";
   } catch {
     return "error";
