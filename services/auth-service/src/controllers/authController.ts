@@ -1,23 +1,22 @@
 import { Request, Response } from "express";
-import { signToken } from "../config/jwt";
+import {
+  signAccessToken,
+  signRefreshToken,
+  verifyRefreshToken,
+} from "../config/jwt";
 import { AppError } from "../middleware/errorHandler";
 import { User } from "@prisma/client";
+import prisma from "../config/database";
 import logger from "../config/logger";
 
 // ─── Google OAuth Callback ────────────────────────────────
 // GET /auth/google/callback
 //
-// Called by Passport after Google OAuth succeeds.
-// req.user is populated by passport.ts GoogleStrategy done() call.
+// Issues BOTH tokens after successful Google OAuth:
+//   accessToken  → short lived (15min), used for every API request
+//   refreshToken → long lived (7 days), used to get new access tokens
 //
-// Flow:
-//   1. Passport has already found/created the user in DB
-//   2. We sign a JWT containing userId and email
-//   3. Return the JWT to the client
-//
-// In production you would set the JWT in an httpOnly cookie
-// For now we return it in the response body for simplicity
-// Cookie approach added when we wire up the frontend
+// refreshToken is stored in DB so logout can invalidate it
 export const googleCallback = async (
   req: Request,
   res: Response,
@@ -28,21 +27,28 @@ export const googleCallback = async (
     throw new AppError("Authentication failed", 401);
   }
 
-  // Sign JWT with userId and email
-  const token = signToken({
+  // ── Issue both tokens ────────────────────────────────────
+  const accessToken = signAccessToken({
     userId: user.id,
     email: user.email,
   });
 
-  logger.info("JWT issued", { userId: user.id, email: user.email });
+  const refreshToken = signRefreshToken(user.id);
 
-  // Return token in response body
-  // Frontend stores this and sends it as:
-  // Authorization: Bearer <token> on every request
+  // ── Store refresh token in DB ────────────────────────────
+  // Enables server-side logout by deleting this value
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { refreshToken },
+  });
+
+  logger.info("Tokens issued", { userId: user.id, email: user.email });
+
   res.status(200).json({
     status: "success",
     data: {
-      token,
+      accessToken,
+      refreshToken,
       user: {
         id: user.id,
         email: user.email,
@@ -52,12 +58,60 @@ export const googleCallback = async (
   });
 };
 
+// ─── Refresh Access Token ─────────────────────────────────
+// POST /auth/refresh
+// Body: { refreshToken: string }
+//
+// Flow:
+//   1. Verify refresh token signature
+//   2. Look up user in DB — verify stored refresh token matches
+//   3. Issue new access token
+//   4. Return new access token (refresh token stays the same)
+//
+// Why verify against DB?
+//   After logout the refresh token is deleted from DB.
+//   Even if attacker has the refresh token, DB check fails → 401
+export const refresh = async (req: Request, res: Response): Promise<void> => {
+  const { refreshToken } = req.body;
+
+  if (!refreshToken) {
+    throw new AppError("Refresh token is required", 400);
+  }
+
+  // ── Verify refresh token signature ───────────────────────
+  const payload = verifyRefreshToken(refreshToken);
+
+  if (!payload) {
+    throw new AppError("Invalid or expired refresh token", 401);
+  }
+
+  // ── Verify token matches what is stored in DB ────────────
+  const user = await prisma.user.findUnique({
+    where: { id: payload.userId },
+  });
+
+  if (!user || user.refreshToken !== refreshToken) {
+    throw new AppError("Refresh token has been revoked", 401);
+  }
+
+  // ── Issue new access token ───────────────────────────────
+  const accessToken = signAccessToken({
+    userId: user.id,
+    email: user.email,
+  });
+
+  logger.info("Access token refreshed", { userId: user.id });
+
+  res.status(200).json({
+    status: "success",
+    data: {
+      accessToken,
+    },
+  });
+};
+
 // ─── Get Current User ─────────────────────────────────────
 // GET /auth/me
-//
-// Returns the currently authenticated user.
-// req.user is populated by the authenticate middleware (PR-12)
-// which verifies the JWT from the Authorization header.
 export const getMe = async (req: Request, res: Response): Promise<void> => {
   const user = req.user as User;
 
@@ -80,25 +134,27 @@ export const getMe = async (req: Request, res: Response): Promise<void> => {
 // ─── Logout ───────────────────────────────────────────────
 // POST /auth/logout
 //
-// JWTs are stateless — we cannot invalidate them server-side
-// without a token blacklist (Redis based — added later if needed).
+// TRUE server-side logout — deletes refresh token from DB
+// After this:
+//   - Existing access token works until it expires (15min max)
+//   - POST /auth/refresh returns 401 — no new access tokens possible
+//   - User is effectively logged out within 15 minutes
 //
-// For now logout is client-side only:
-//   Client deletes the JWT from localStorage/cookie
-//   Server confirms the logout request was received
-//
-// This is acceptable for most use cases.
-// If you need immediate token invalidation:
-//   Store JWT ID (jti) in Redis blacklist on logout
-//   Check blacklist on every request in authenticate middleware
+// For immediate logout: reduce access token TTL or implement
+// a Redis-based token blacklist (future enhancement)
 export const logout = async (req: Request, res: Response): Promise<void> => {
-  // If using httpOnly cookies:
-  // res.clearCookie("token");
+  const user = req.user as User;
 
-  logger.info("User logged out", { userId: (req.user as User)?.id });
+  // ── Delete refresh token from DB ─────────────────────────
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { refreshToken: null },
+  });
+
+  logger.info("User logged out", { userId: user.id });
 
   res.status(200).json({
     status: "success",
-    message: "Logged out successfully — please delete your token",
+    message: "Logged out successfully",
   });
 };

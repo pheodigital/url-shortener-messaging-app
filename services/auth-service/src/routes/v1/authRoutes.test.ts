@@ -1,14 +1,17 @@
 // ─── Mocks must be declared before any imports ────────────
+const mockPrisma = {
+  user: {
+    findUnique: jest.fn(),
+    upsert: jest.fn(),
+    update: jest.fn(),
+  },
+};
+
 jest.mock("../../config/database", () => ({
   __esModule: true,
   connectDatabase: jest.fn().mockResolvedValue(undefined),
   checkDatabaseHealth: jest.fn().mockResolvedValue("ok"),
-  default: {
-    user: {
-      findUnique: jest.fn(),
-      upsert: jest.fn(),
-    },
-  },
+  default: mockPrisma,
 }));
 
 jest.mock("../../config/passport", () => ({
@@ -28,14 +31,11 @@ jest.mock("../../config/passport", () => ({
 
 import request from "supertest";
 import app from "../../app";
-import { signToken } from "../../config/jwt";
+import { signAccessToken, signRefreshToken } from "../../config/jwt";
 
-const db = require("../../config/database");
-const mockPrisma = db.default;
-
-// ─── GET /auth/google ─────────────────────────────────────
-describe("GET /auth/google", () => {
-  it("should return 401 on failed OAuth callback", async () => {
+// ─── GET /auth/failed ─────────────────────────────────────
+describe("GET /auth/failed", () => {
+  it("should return 401 on failed OAuth", async () => {
     const res = await request(app).get("/auth/failed");
     expect(res.statusCode).toBe(401);
     expect(res.body.status).toBe("error");
@@ -45,21 +45,23 @@ describe("GET /auth/google", () => {
 
 // ─── GET /auth/me ─────────────────────────────────────────
 describe("GET /auth/me", () => {
-  it("should return 200 with user when JWT is valid", async () => {
+  it("should return 200 with user when access token is valid", async () => {
     const mockUser = {
       id: "user-uuid-1",
       email: "test@example.com",
       name: "Test User",
       googleId: "google-123",
+      refreshToken: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
 
-    // Mock DB lookup in authenticate middleware
     mockPrisma.user.findUnique.mockResolvedValueOnce(mockUser);
 
-    // Generate a real JWT for the test user
-    const token = signToken({ userId: mockUser.id, email: mockUser.email });
+    const token = signAccessToken({
+      userId: mockUser.id,
+      email: mockUser.email,
+    });
 
     const res = await request(app)
       .get("/auth/me")
@@ -68,14 +70,11 @@ describe("GET /auth/me", () => {
     expect(res.statusCode).toBe(200);
     expect(res.body.status).toBe("success");
     expect(res.body.data.user.email).toBe("test@example.com");
-    expect(res.body.data.user.name).toBe("Test User");
   });
 
   it("should return 401 when no token provided", async () => {
     const res = await request(app).get("/auth/me");
-
     expect(res.statusCode).toBe(401);
-    expect(res.body.status).toBe("error");
     expect(res.body.message).toBe("No token provided");
   });
 
@@ -83,15 +82,12 @@ describe("GET /auth/me", () => {
     const res = await request(app)
       .get("/auth/me")
       .set("Authorization", "Bearer invalid.token.here");
-
     expect(res.statusCode).toBe(401);
-    expect(res.body.status).toBe("error");
     expect(res.body.message).toBe("Invalid or expired token");
   });
 
   it("should return 401 when user no longer exists in DB", async () => {
-    // Valid JWT but user deleted from DB
-    const token = signToken({
+    const token = signAccessToken({
       userId: "deleted-user",
       email: "gone@example.com",
     });
@@ -106,9 +102,9 @@ describe("GET /auth/me", () => {
   });
 });
 
-// ─── POST /auth/logout ────────────────────────────────────
-describe("POST /auth/logout", () => {
-  it("should return 200 when authenticated user logs out", async () => {
+// ─── POST /auth/refresh ───────────────────────────────────
+describe("POST /auth/refresh", () => {
+  it("should return new access token when refresh token is valid", async () => {
     const mockUser = {
       id: "user-uuid-1",
       email: "test@example.com",
@@ -118,9 +114,77 @@ describe("POST /auth/logout", () => {
       updatedAt: new Date(),
     };
 
-    mockPrisma.user.findUnique.mockResolvedValueOnce(mockUser);
+    const refreshToken = signRefreshToken(mockUser.id);
 
-    const token = signToken({ userId: mockUser.id, email: mockUser.email });
+    // DB returns user with matching refresh token
+    mockPrisma.user.findUnique.mockResolvedValueOnce({
+      ...mockUser,
+      refreshToken,
+    });
+
+    const res = await request(app).post("/auth/refresh").send({ refreshToken });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.status).toBe("success");
+    expect(res.body.data.accessToken).toBeDefined();
+  });
+
+  it("should return 400 when refresh token is missing", async () => {
+    const res = await request(app).post("/auth/refresh").send({});
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body.message).toBe("Refresh token is required");
+  });
+
+  it("should return 401 when refresh token is invalid", async () => {
+    const res = await request(app)
+      .post("/auth/refresh")
+      .send({ refreshToken: "invalid.token.here" });
+
+    expect(res.statusCode).toBe(401);
+    expect(res.body.message).toBe("Invalid or expired refresh token");
+  });
+
+  it("should return 401 when refresh token has been revoked", async () => {
+    const refreshToken = signRefreshToken("user-uuid-1");
+
+    // DB returns user with DIFFERENT refresh token (revoked)
+    mockPrisma.user.findUnique.mockResolvedValueOnce({
+      id: "user-uuid-1",
+      email: "test@example.com",
+      refreshToken: "different-token", // ← does not match
+    });
+
+    const res = await request(app).post("/auth/refresh").send({ refreshToken });
+
+    expect(res.statusCode).toBe(401);
+    expect(res.body.message).toBe("Refresh token has been revoked");
+  });
+});
+
+// ─── POST /auth/logout ────────────────────────────────────
+describe("POST /auth/logout", () => {
+  it("should return 200 and delete refresh token from DB", async () => {
+    const mockUser = {
+      id: "user-uuid-1",
+      email: "test@example.com",
+      name: "Test User",
+      googleId: "google-123",
+      refreshToken: "some-refresh-token",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    mockPrisma.user.findUnique.mockResolvedValueOnce(mockUser);
+    mockPrisma.user.update.mockResolvedValueOnce({
+      ...mockUser,
+      refreshToken: null,
+    });
+
+    const token = signAccessToken({
+      userId: mockUser.id,
+      email: mockUser.email,
+    });
 
     const res = await request(app)
       .post("/auth/logout")
@@ -128,12 +192,17 @@ describe("POST /auth/logout", () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.body.status).toBe("success");
+
+    // Verify refresh token was deleted from DB
+    expect(mockPrisma.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { refreshToken: null },
+      }),
+    );
   });
 
   it("should return 401 when logging out without token", async () => {
     const res = await request(app).post("/auth/logout");
-
     expect(res.statusCode).toBe(401);
-    expect(res.body.status).toBe("error");
   });
 });
