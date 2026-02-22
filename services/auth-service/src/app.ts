@@ -4,8 +4,10 @@ import cors from "cors";
 import "express-async-errors";
 
 import env from "./config/env";
+import "./config/passport"; // initialises passport strategies
 import { notFound, errorHandler } from "./middleware/errorHandler";
 import healthRoutes from "./routes/v1/healthRoutes";
+import authRoutes from "./routes/v1/authRoutes";
 
 const app: Application = express();
 
@@ -14,7 +16,7 @@ app.use(helmet());
 app.use(
   cors({
     origin: env.ALLOWED_ORIGIN,
-    credentials: true, // needed for cookies (JWT in httpOnly cookie)
+    credentials: true,
   }),
 );
 
@@ -34,9 +36,7 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
 
 // ─── Routes ───────────────────────────────────────────────
 app.use(healthRoutes);
-
-// PR-11 → Google OAuth routes (/auth/google, /auth/google/callback)
-// PR-12 → JWT routes (/auth/me, /auth/refresh, /auth/logout)
+app.use(authRoutes);
 
 // ─── Error Handling ───────────────────────────────────────
 app.use(notFound);
