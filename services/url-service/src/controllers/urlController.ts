@@ -1,11 +1,11 @@
 import { Request, Response } from "express";
 import { nanoid } from "nanoid";
-
 import prisma from "../config/database";
 import { invalidateCachedUrl, warmCache } from "../config/cache";
 import env from "../config/env";
 import logger from "../config/logger";
 import { AppError } from "../middleware/errorHandler";
+import { AccessTokenPayload } from "../config/jwt";
 import { CreateUrlInput } from "../schemas/urlSchemas";
 
 // ─── Create Short URL ─────────────────────────────────────
@@ -13,6 +13,9 @@ import { CreateUrlInput } from "../schemas/urlSchemas";
 // Body: { longUrl: string, customCode?: string }
 export const createUrl = async (req: Request, res: Response): Promise<void> => {
   const { longUrl, customCode } = req.body as CreateUrlInput;
+
+  // PR-13: get userId from JWT payload attached by authenticate middleware
+  const { userId } = req.user as AccessTokenPayload;
 
   let shortcode: string;
 
@@ -27,16 +30,22 @@ export const createUrl = async (req: Request, res: Response): Promise<void> => {
 
     shortcode = customCode;
   } else {
-    // nanoid(7) generates a random 7-character URL-safe shortcode
-    // 7 chars = ~3.5 trillion combinations — collision extremely unlikely
     shortcode = nanoid(7);
   }
 
-  const url = await prisma.url.create({ data: { shortcode, longUrl } });
+  // ── Save to database ─────────────────────────────────────
+  const url = await prisma.url.create({
+    data: {
+      shortcode,
+      longUrl,
+      userId, // ← PR-13: associate URL with authenticated user
+    },
+  });
 
+  // ── Pre-warm cache ───────────────────────────────────────
   await warmCache(shortcode, longUrl);
 
-  logger.info("URL created", { shortcode, longUrl });
+  logger.info("URL created", { shortcode, longUrl, userId });
 
   res.status(201).json({
     status: "success",
@@ -52,11 +61,14 @@ export const createUrl = async (req: Request, res: Response): Promise<void> => {
 
 // ─── List URLs ────────────────────────────────────────────
 // GET /api/urls
+// Returns only the authenticated user's URLs
 export const listUrls = async (req: Request, res: Response): Promise<void> => {
+  const { userId } = req.user as AccessTokenPayload;
+
   const urls = await prisma.url.findMany({
     where: {
       isActive: true,
-      // userId: req.user.id  ← added in PR-13
+      userId, // ← PR-13: only return this user's URLs
     },
     orderBy: { createdAt: "desc" },
     select: {
@@ -81,21 +93,9 @@ export const listUrls = async (req: Request, res: Response): Promise<void> => {
 
 // ─── Delete URL ───────────────────────────────────────────
 // DELETE /api/urls/:id
-//
-// Two things happen on delete:
-//   1. Soft delete in PostgreSQL (isActive: false)
-//   2. Invalidate Redis cache immediately
-//
-// Why invalidate cache on delete?
-//   Without invalidation:
-//     User deletes URL → DB updated → cache still has old value
-//     Next redirect → cache HIT → serves deleted URL for up to 24h ❌
-//
-//   With invalidation (this PR):
-//     User deletes URL → DB updated → cache key deleted
-//     Next redirect → cache MISS → DB lookup → 410 Gone ✅
 export const deleteUrl = async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
+  const { userId } = req.user as AccessTokenPayload;
 
   const url = await prisma.url.findUnique({
     where: { id },
@@ -109,21 +109,22 @@ export const deleteUrl = async (req: Request, res: Response): Promise<void> => {
     throw new AppError("URL is already deleted", 410);
   }
 
-  // Ownership check added in PR-13:
-  // if (url.userId !== req.user.id) throw new AppError("Forbidden", 403)
+  // ── PR-13: Ownership check ───────────────────────────────
+  // Users can only delete their own URLs
+  if (url.userId !== userId) {
+    throw new AppError("Forbidden", 403);
+  }
 
-  // ── Step 1: Soft delete in PostgreSQL ───────────────────
+  // ── Soft delete in PostgreSQL ────────────────────────────
   await prisma.url.update({
     where: { id },
     data: { isActive: false },
   });
 
-  // ── Step 2: Invalidate Redis cache ───────────────────────
-  // Must happen AFTER DB update to avoid race condition
-  // invalidateCachedUrl never throws — safe to call always
+  // ── Invalidate Redis cache ───────────────────────────────
   await invalidateCachedUrl(url.shortcode);
 
-  logger.info("URL deleted", { id, shortcode: url.shortcode });
+  logger.info("URL deleted", { id, shortcode: url.shortcode, userId });
 
   res.status(200).json({
     status: "success",

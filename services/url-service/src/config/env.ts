@@ -29,7 +29,7 @@ const envSchema = z.object({
   RABBITMQ_PREFETCH_COUNT: z.string().default("10").transform(Number),
 
   // JWT — required from PR-12 onwards
-  JWT_SECRET: z.string().optional(),
+  JWT_ACCESS_SECRET: z.string().optional(),
 
   // Rate Limiting — required from PR-19 onwards
   RATE_LIMIT_REDIRECT_RPM: z.string().default("300").transform(Number),

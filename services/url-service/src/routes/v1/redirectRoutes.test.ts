@@ -1,3 +1,4 @@
+import jwt from "jsonwebtoken";
 // ─── Mocks must be declared before any imports ────────────
 const mockPrisma = {
   url: {
@@ -106,7 +107,17 @@ describe("GET /:shortcode — redirect", () => {
 
   it("should not interfere with /api/urls route", async () => {
     mockPrisma.url.findMany.mockResolvedValueOnce([]);
-    const res = await request(app).get("/api/urls");
+
+    const token = jwt.sign(
+      { userId: "test-user-id", email: "test@example.com" },
+      process.env["JWT_ACCESS_SECRET"] ??
+        "test-secret-that-is-at-least-32-chars!!",
+    );
+
+    const res = await request(app)
+      .get("/api/urls")
+      .set("Authorization", `Bearer ${token}`);
+
     expect(res.statusCode).toBe(200);
     expect(res.body.status).toBe("success");
   });

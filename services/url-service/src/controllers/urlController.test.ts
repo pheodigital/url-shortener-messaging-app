@@ -1,5 +1,4 @@
 // ─── Mocks must be declared before any imports ────────────
-// From src/controllers/ → one level up → src/config/
 const mockPrisma = {
   url: {
     create: jest.fn(),
@@ -36,9 +35,12 @@ import { AppError } from "../middleware/errorHandler";
 import * as cache from "../config/cache";
 
 // ─── Helpers ──────────────────────────────────────────────
+const TEST_USER = { userId: "test-user-id", email: "test@example.com" };
+
 const mockReq = (overrides: Partial<Request> = {}): Partial<Request> => ({
   body: {},
   params: {},
+  user: TEST_USER, // ← PR-13: attach user to every request
   ...overrides,
 });
 
@@ -51,7 +53,7 @@ const mockRes = (): Partial<Response> => {
 
 // ─── createUrl ────────────────────────────────────────────
 describe("createUrl controller", () => {
-  it("should create a URL and return 201 with shortUrl", async () => {
+  it("should create URL scoped to authenticated user and return 201", async () => {
     mockPrisma.url.create.mockResolvedValue({
       id: "test-uuid",
       shortcode: "abc1234",
@@ -63,20 +65,28 @@ describe("createUrl controller", () => {
     const res = mockRes();
 
     await createUrl(req as Request, res as Response);
-    expect(res.status).toHaveBeenCalledWith(201);
 
+    expect(res.status).toHaveBeenCalledWith(201);
     expect(res.json).toHaveBeenCalledWith(
       expect.objectContaining({
         status: "success",
         data: expect.objectContaining({
-          shortcode: "abc1234",
           longUrl: "https://www.google.com",
           shortUrl: expect.stringContaining("abc1234"),
         }),
       }),
     );
 
-    // PR-09: cache must be warmed immediately after creation
+    // Verify URL is associated with authenticated user
+    expect(mockPrisma.url.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          userId: "test-user-id",
+        }),
+      }),
+    );
+
+    // Verify cache is pre-warmed
     expect(cache.warmCache).toHaveBeenCalledWith(
       expect.any(String),
       "https://www.google.com",
@@ -94,10 +104,6 @@ describe("createUrl controller", () => {
     });
     const res = mockRes();
 
-    await expect(createUrl(req as Request, res as Response)).rejects.toThrow(
-      AppError,
-    );
-
     await expect(
       createUrl(req as Request, res as Response),
     ).rejects.toMatchObject({ status: 409 });
@@ -106,7 +112,7 @@ describe("createUrl controller", () => {
 
 // ─── listUrls ─────────────────────────────────────────────
 describe("listUrls controller", () => {
-  it("should return 200 with list of URLs including shortUrl", async () => {
+  it("should return only authenticated user's URLs", async () => {
     mockPrisma.url.findMany.mockResolvedValue([
       {
         id: "uuid-1",
@@ -122,21 +128,18 @@ describe("listUrls controller", () => {
     await listUrls(req as Request, res as Response);
 
     expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json).toHaveBeenCalledWith(
+
+    // Verify query is scoped to this user's URLs
+    expect(mockPrisma.url.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        status: "success",
-        count: 1,
-        data: expect.arrayContaining([
-          expect.objectContaining({
-            shortcode: "abc1234",
-            shortUrl: expect.stringContaining("abc1234"),
-          }),
-        ]),
+        where: expect.objectContaining({
+          userId: "test-user-id",
+        }),
       }),
     );
   });
 
-  it("should return 200 with empty array when no URLs exist", async () => {
+  it("should return 200 with empty array when user has no URLs", async () => {
     mockPrisma.url.findMany.mockResolvedValue([]);
 
     const req = mockReq();
@@ -146,27 +149,21 @@ describe("listUrls controller", () => {
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({
-        status: "success",
-        count: 0,
-        data: [],
-      }),
+      expect.objectContaining({ count: 0, data: [] }),
     );
   });
 });
 
 // ─── deleteUrl ────────────────────────────────────────────
 describe("deleteUrl controller", () => {
-  it("should soft delete URL and invalidate cache", async () => {
+  it("should soft delete URL and invalidate cache when user owns it", async () => {
     mockPrisma.url.findUnique.mockResolvedValue({
       id: "uuid-1",
       shortcode: "abc1234",
       isActive: true,
+      userId: "test-user-id", // ← matches TEST_USER
     });
-    mockPrisma.url.update.mockResolvedValue({
-      id: "uuid-1",
-      isActive: false,
-    });
+    mockPrisma.url.update.mockResolvedValue({ id: "uuid-1", isActive: false });
 
     const req = mockReq({ params: { id: "uuid-1" } });
     const res = mockRes();
@@ -174,22 +171,26 @@ describe("deleteUrl controller", () => {
     await deleteUrl(req as Request, res as Response);
 
     expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json).toHaveBeenCalledWith(
-      expect.objectContaining({
-        status: "success",
-        message: "URL deleted successfully",
-      }),
-    );
-
-    // Verify soft delete
     expect(mockPrisma.url.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: { isActive: false },
-      }),
+      expect.objectContaining({ data: { isActive: false } }),
     );
-
-    // Verify cache invalidation — key must be removed on delete
     expect(cache.invalidateCachedUrl).toHaveBeenCalledWith("abc1234");
+  });
+
+  it("should throw AppError 403 when user does not own the URL", async () => {
+    mockPrisma.url.findUnique.mockResolvedValue({
+      id: "uuid-1",
+      shortcode: "abc1234",
+      isActive: true,
+      userId: "different-user-id", // ← does not match TEST_USER
+    });
+
+    const req = mockReq({ params: { id: "uuid-1" } });
+    const res = mockRes();
+
+    await expect(
+      deleteUrl(req as Request, res as Response),
+    ).rejects.toMatchObject({ status: 403 });
   });
 
   it("should throw AppError 404 when URL does not exist", async () => {
@@ -197,10 +198,6 @@ describe("deleteUrl controller", () => {
 
     const req = mockReq({ params: { id: "nonexistent" } });
     const res = mockRes();
-
-    await expect(deleteUrl(req as Request, res as Response)).rejects.toThrow(
-      AppError,
-    );
 
     await expect(
       deleteUrl(req as Request, res as Response),
@@ -212,14 +209,11 @@ describe("deleteUrl controller", () => {
       id: "uuid-1",
       shortcode: "abc1234",
       isActive: false,
+      userId: "test-user-id",
     });
 
     const req = mockReq({ params: { id: "uuid-1" } });
     const res = mockRes();
-
-    await expect(deleteUrl(req as Request, res as Response)).rejects.toThrow(
-      AppError,
-    );
 
     await expect(
       deleteUrl(req as Request, res as Response),

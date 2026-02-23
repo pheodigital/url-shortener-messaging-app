@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { authenticate } from "../../middleware/authenticate";
 import { validate } from "../../middleware/validate";
 import { createUrlSchema } from "../../schemas/urlSchemas";
 import {
@@ -10,24 +11,20 @@ import {
 const router = Router();
 
 // ─── URL Routes ───────────────────────────────────────────
-// All routes prefixed with /api/urls (set in app.ts)
+// All routes require authentication from PR-13 onwards
 //
-// Middleware chain for POST:
-//   validate(createUrlSchema) → validates req.body
-//   createUrl                 → runs only if validation passes
-//
-// Auth middleware added in PR-13:
-//   authenticate → validate(schema) → controller
+// Middleware chain:
+//   authenticate → verifies JWT, attaches req.user
+//   validate     → validates req.body (POST only)
+//   controller   → runs only if all middleware passes
 
-// POST /api/urls — create a new short URL
-router.post("/", validate(createUrlSchema), createUrl);
+// POST /api/urls — create a short URL owned by authenticated user
+router.post("/", authenticate, validate(createUrlSchema), createUrl);
 
-// GET /api/urls — list all URLs
-// In PR-13: returns only the authenticated user's URLs
-router.get("/", listUrls);
+// GET /api/urls — list authenticated user's URLs only
+router.get("/", authenticate, listUrls);
 
-// DELETE /api/urls/:id — soft delete a URL
-// In PR-13: checks ownership before deleting
-router.delete("/:id", deleteUrl);
+// DELETE /api/urls/:id — soft delete (ownership check in controller)
+router.delete("/:id", authenticate, deleteUrl);
 
 export default router;
