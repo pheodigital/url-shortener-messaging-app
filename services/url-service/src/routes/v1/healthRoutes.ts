@@ -1,27 +1,25 @@
 import { Router, Request, Response } from "express";
-
 import { checkDatabaseHealth } from "../../config/database";
 import { checkRedisHealth } from "../../config/redis";
+import { checkRabbitMQHealth } from "../../config/rabbitmq";
 
 const router = Router();
 
 // ─── GET /health ──────────────────────────────────────────
-// Used by: Docker HEALTHCHECK, K8s liveness probe, NGINX upstream check
-//
-// Returns dependency statuses so a single request tells you
-// if the entire service is healthy or which dependency is down.
-//
-// Dependencies added per PR:
-//   PR-03 (this PR) → postgres
-//   PR-07           → redis
-//   PR-14           → rabbitmq
+// Dependencies:
+//   PR-03 → postgres
+//   PR-07 → redis
+//   PR-14 → rabbitmq  (this PR)
 router.get("/health", async (req: Request, res: Response) => {
   const [postgres, redis] = await Promise.all([
     checkDatabaseHealth(),
     checkRedisHealth(),
   ]);
 
-  const isHealthy = postgres === "ok" && redis === "ok";
+  // checkRabbitMQHealth is synchronous — no need to include in Promise.all
+  const rabbitmq = checkRabbitMQHealth();
+
+  const isHealthy = postgres === "ok" && redis === "ok" && rabbitmq === "ok";
 
   res.status(isHealthy ? 200 : 503).json({
     status: isHealthy ? "ok" : "degraded",
@@ -30,6 +28,7 @@ router.get("/health", async (req: Request, res: Response) => {
     dependencies: {
       postgres,
       redis,
+      rabbitmq,
     },
   });
 });

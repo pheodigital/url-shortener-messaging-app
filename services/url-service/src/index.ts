@@ -2,10 +2,14 @@ import env from "./config/env";
 import logger from "./config/logger";
 import { connectDatabase } from "./config/database";
 import { connectRedis } from "./config/redis";
+import { connectRabbitMQ, disconnectRabbitMQ } from "./config/rabbitmq";
 import app from "./app";
 
+// ─── Bootstrap ────────────────────────────────────────────
+// Connect to all dependencies first, then start HTTP server.
+// All three connections run in parallel — faster startup.
 const bootstrap = async (): Promise<void> => {
-  await Promise.all([connectDatabase(), connectRedis()]);
+  await Promise.all([connectDatabase(), connectRedis(), connectRabbitMQ()]);
 
   const server = app.listen(env.PORT, () => {
     logger.info(`url-service running on port ${env.PORT}`, {
@@ -14,12 +18,18 @@ const bootstrap = async (): Promise<void> => {
     });
   });
 
-  const shutdown = (signal: string): void => {
+  // ─── Graceful Shutdown ──────────────────────────────────
+  const shutdown = async (signal: string): Promise<void> => {
     logger.info(`${signal} received — shutting down gracefully`);
-    server.close(() => {
+
+    server.close(async () => {
+      // Disconnect RabbitMQ cleanly before exiting
+      // so in-flight messages are not lost
+      await disconnectRabbitMQ();
       logger.info("Server closed — process exiting");
       process.exit(0);
     });
+
     setTimeout(() => {
       logger.error("Graceful shutdown timed out — forcing exit");
       process.exit(1);
@@ -31,3 +41,5 @@ const bootstrap = async (): Promise<void> => {
 };
 
 bootstrap();
+
+export default app;

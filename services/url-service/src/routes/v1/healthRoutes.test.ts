@@ -18,20 +18,30 @@ jest.mock("../../config/redis", () => ({
   connectRedis: jest.fn().mockResolvedValue(undefined),
   checkRedisHealth: jest.fn().mockResolvedValue("ok"),
   getRedis: jest.fn(),
-  default: null,
+}));
+
+jest.mock("../../config/rabbitmq", () => ({
+  __esModule: true,
+  connectRabbitMQ: jest.fn().mockResolvedValue(undefined),
+  checkRabbitMQHealth: jest.fn().mockReturnValue("ok"),
+  getChannel: jest.fn(),
+  disconnectRabbitMQ: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock("../../config/cache", () => ({
+  getCachedUrl: jest.fn().mockResolvedValue(null),
+  setCachedUrl: jest.fn().mockResolvedValue(undefined),
+  invalidateCachedUrl: jest.fn().mockResolvedValue(undefined),
+  warmCache: jest.fn().mockResolvedValue(undefined),
 }));
 
 import request from "supertest";
 import app from "../../app";
 
-// ─── Health Endpoint — all dependencies ok ────────────────
-describe("GET /health — database ok", () => {
-  it("should return 200 when postgres and redis are healthy", async () => {
+// ─── All dependencies healthy ─────────────────────────────
+describe("GET /health — all ok", () => {
+  it("should return 200 when all dependencies are healthy", async () => {
     const res = await request(app).get("/health");
-
-    console.log("STATUS:", res.statusCode);
-    console.log("BODY:", JSON.stringify(res.body));
-    console.log("TEXT:", res.text);
 
     expect(res.statusCode).toBe(200);
     expect(res.body.status).toBe("ok");
@@ -39,6 +49,7 @@ describe("GET /health — database ok", () => {
     expect(res.body.timestamp).toBeDefined();
     expect(res.body.dependencies.postgres).toBe("ok");
     expect(res.body.dependencies.redis).toBe("ok");
+    expect(res.body.dependencies.rabbitmq).toBe("ok");
   });
 
   it("should return a valid ISO timestamp", async () => {
@@ -48,8 +59,8 @@ describe("GET /health — database ok", () => {
   });
 });
 
-// ─── Health Endpoint — postgres down ─────────────────────
-describe("GET /health — database down", () => {
+// ─── Postgres down ────────────────────────────────────────
+describe("GET /health — postgres down", () => {
   it("should return 503 when postgres is down", async () => {
     const db = require("../../config/database");
     db.checkDatabaseHealth.mockResolvedValueOnce("error");
@@ -61,7 +72,7 @@ describe("GET /health — database down", () => {
   });
 });
 
-// ─── Health Endpoint — redis down ────────────────────────
+// ─── Redis down ───────────────────────────────────────────
 describe("GET /health — redis down", () => {
   it("should return 503 when redis is down", async () => {
     const redis = require("../../config/redis");
@@ -71,6 +82,19 @@ describe("GET /health — redis down", () => {
     expect(res.statusCode).toBe(503);
     expect(res.body.status).toBe("degraded");
     expect(res.body.dependencies.redis).toBe("error");
+  });
+});
+
+// ─── RabbitMQ down ───────────────────────────────────────
+describe("GET /health — rabbitmq down", () => {
+  it("should return 503 when rabbitmq is down", async () => {
+    const rabbit = require("../../config/rabbitmq");
+    rabbit.checkRabbitMQHealth.mockReturnValueOnce("error");
+
+    const res = await request(app).get("/health");
+    expect(res.statusCode).toBe(503);
+    expect(res.body.status).toBe("degraded");
+    expect(res.body.dependencies.rabbitmq).toBe("error");
   });
 });
 

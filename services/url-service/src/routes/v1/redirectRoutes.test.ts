@@ -23,6 +23,14 @@ jest.mock("../../config/redis", () => ({
   getRedis: jest.fn(),
 }));
 
+jest.mock("../../config/rabbitmq", () => ({
+  __esModule: true,
+  connectRabbitMQ: jest.fn().mockResolvedValue(undefined),
+  checkRabbitMQHealth: jest.fn().mockReturnValue("ok"), // ← mockReturnValue not mockResolvedValue
+  getChannel: jest.fn(),
+  disconnectRabbitMQ: jest.fn().mockResolvedValue(undefined),
+}));
+
 // ─── Mock cache helpers ───────────────────────────────────
 // Cache is mocked at the helper level — we test the controller
 // logic not the Redis commands themselves
