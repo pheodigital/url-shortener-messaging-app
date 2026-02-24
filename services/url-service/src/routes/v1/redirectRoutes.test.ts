@@ -1,4 +1,3 @@
-import jwt from "jsonwebtoken";
 // ─── Mocks must be declared before any imports ────────────
 const mockPrisma = {
   url: {
@@ -23,31 +22,41 @@ jest.mock("../../config/redis", () => ({
   getRedis: jest.fn(),
 }));
 
+jest.mock("../../config/cache", () => ({
+  getCachedUrl: jest.fn().mockResolvedValue(null),
+  setCachedUrl: jest.fn().mockResolvedValue(undefined),
+  invalidateCachedUrl: jest.fn().mockResolvedValue(undefined),
+}));
+
 jest.mock("../../config/rabbitmq", () => ({
   __esModule: true,
   connectRabbitMQ: jest.fn().mockResolvedValue(undefined),
-  checkRabbitMQHealth: jest.fn().mockReturnValue("ok"), // ← mockReturnValue not mockResolvedValue
+  checkRabbitMQHealth: jest.fn().mockReturnValue("ok"),
   getChannel: jest.fn(),
   disconnectRabbitMQ: jest.fn().mockResolvedValue(undefined),
 }));
 
-// ─── Mock cache helpers ───────────────────────────────────
-// Cache is mocked at the helper level — we test the controller
-// logic not the Redis commands themselves
-jest.mock("../../config/cache", () => ({
-  getCachedUrl: jest.fn().mockResolvedValue(null), // default: cache MISS
-  setCachedUrl: jest.fn().mockResolvedValue(undefined),
-  invalidateCachedUrl: jest.fn().mockResolvedValue(undefined),
+// ─── Mock clickPublisher ──────────────────────────────────
+// We test that publishClickEvent is called — not that RabbitMQ
+// actually receives the message (that is clickPublisher's concern)
+jest.mock("../../config/clickPublisher", () => ({
+  publishClickEvent: jest.fn().mockResolvedValue(undefined),
 }));
 
 import request from "supertest";
 import app from "../../app";
 import * as cache from "../../config/cache";
+import * as clickPublisher from "../../config/clickPublisher";
+import jwt from "jsonwebtoken";
+
+const TEST_TOKEN = jwt.sign(
+  { userId: "test-user-id", email: "test@example.com" },
+  process.env["JWT_ACCESS_SECRET"] ?? "test-secret-that-is-at-least-32-chars!!",
+);
 
 // ─── GET /:shortcode ──────────────────────────────────────
 describe("GET /:shortcode — redirect", () => {
-  it("should return 302 via cache HIT without querying DB", async () => {
-    // Simulate cache HIT — longUrl found in Redis
+  it("should return 302 via cache HIT and publish click event", async () => {
     (cache.getCachedUrl as jest.Mock).mockResolvedValueOnce(
       "https://www.google.com",
     );
@@ -59,10 +68,20 @@ describe("GET /:shortcode — redirect", () => {
 
     // DB should NOT be called on cache hit
     expect(mockPrisma.url.findUnique).not.toHaveBeenCalled();
+
+    // Click event should be published on cache HIT
+    expect(clickPublisher.publishClickEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        shortcode: "abc1234",
+        longUrl: "https://www.google.com",
+        timestamp: expect.any(String),
+        ip: expect.any(String),
+        userAgent: expect.any(String),
+      }),
+    );
   });
 
-  it("should return 302 via DB on cache MISS and populate cache", async () => {
-    // Cache MISS — falls through to DB
+  it("should return 302 via DB on cache MISS and publish click event", async () => {
     (cache.getCachedUrl as jest.Mock).mockResolvedValueOnce(null);
 
     mockPrisma.url.findUnique.mockResolvedValueOnce({
@@ -79,6 +98,14 @@ describe("GET /:shortcode — redirect", () => {
     expect(cache.setCachedUrl).toHaveBeenCalledWith(
       "abc1234",
       "https://www.google.com",
+    );
+
+    // Click event should be published on cache MISS too
+    expect(clickPublisher.publishClickEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        shortcode: "abc1234",
+        longUrl: "https://www.google.com",
+      }),
     );
   });
 
@@ -116,15 +143,9 @@ describe("GET /:shortcode — redirect", () => {
   it("should not interfere with /api/urls route", async () => {
     mockPrisma.url.findMany.mockResolvedValueOnce([]);
 
-    const token = jwt.sign(
-      { userId: "test-user-id", email: "test@example.com" },
-      process.env["JWT_ACCESS_SECRET"] ??
-        "test-secret-that-is-at-least-32-chars!!",
-    );
-
     const res = await request(app)
       .get("/api/urls")
-      .set("Authorization", `Bearer ${token}`);
+      .set("Authorization", `Bearer ${TEST_TOKEN}`);
 
     expect(res.statusCode).toBe(200);
     expect(res.body.status).toBe("success");
