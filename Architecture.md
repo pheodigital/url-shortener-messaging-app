@@ -452,31 +452,63 @@ What we measure:
 
 ## 10. Build Phase → Architecture Mapping
 
-| Phase | Architecture Component Added |
-|---|---|
-| Phase 1 | URL Service + PostgreSQL + Prisma |
-| Phase 2 | Redis layer (caching + invalidation) |
-| Phase 3 | Auth Service + Google OAuth2 + JWT |
-| Phase 4 | RabbitMQ + Analytics Worker + MongoDB |
-| Phase 5 | Rate limiting middleware (Redis counters) |
-| Phase 6 | Docker + docker-compose (all services containerized) |
-| Phase 7 | NGINX gateway + load balanced URL Service (3 instances) |
-| Phase 8 | GitHub Actions CI/CD pipeline |
-| Phase 9 | Kubernetes cluster + Traefik ingress |
-| Phase 10 | Prometheus + Grafana + OpenTelemetry tracing |
+| Phase    | Architecture Component Added                            |
+| -------- | ------------------------------------------------------- |
+| Phase 1  | URL Service + PostgreSQL + Prisma                       |
+| Phase 2  | Redis layer (caching + invalidation)                    |
+| Phase 3  | Auth Service + Google OAuth2 + JWT                      |
+| Phase 4  | RabbitMQ + Analytics Worker + MongoDB                   |
+| Phase 5  | Rate limiting middleware (Redis counters)               |
+| Phase 6  | Docker + docker-compose (all services containerized)    |
+| Phase 7  | NGINX gateway + load balanced URL Service (3 instances) |
+| Phase 8  | GitHub Actions CI/CD pipeline                           |
+| Phase 9  | Kubernetes cluster + Traefik ingress                    |
+| Phase 10 | Prometheus + Grafana + OpenTelemetry tracing            |
 
 ---
 
 ## 11. Architecture Decisions Log (ADR)
 
-| Decision | Chosen | Rejected | Reason |
-|---|---|---|---|
-| Message broker | RabbitMQ | Kafka | Simpler setup, same concepts at our scale |
-| K8s Ingress | Traefik | ingress-nginx | ingress-nginx retiring March 2026 |
-| Primary DB ORM | Prisma | Sequelize | Better DX, cleaner schema definitions |
-| Redis client | ioredis | node-redis | Better cluster support, more reliable |
-| Auth method | JWT + OAuth2 | Sessions only | Stateless = horizontal scaling friendly |
-| Analytics DB | MongoDB | PostgreSQL | Flexible event schema, append-heavy workload |
-| Short code gen | nanoid | uuid | Shorter, URL-safe, faster |
-| Real-time updates | Polling | WebSockets | No genuine real-time need in this project |
-| Language | JavaScript | TypeScript | Focus on backend concepts, not type system |
+| Decision          | Chosen       | Rejected      | Reason                                       |
+| ----------------- | ------------ | ------------- | -------------------------------------------- |
+| Message broker    | RabbitMQ     | Kafka         | Simpler setup, same concepts at our scale    |
+| K8s Ingress       | Traefik      | ingress-nginx | ingress-nginx retiring March 2026            |
+| Primary DB ORM    | Prisma       | Sequelize     | Better DX, cleaner schema definitions        |
+| Redis client      | ioredis      | node-redis    | Better cluster support, more reliable        |
+| Auth method       | JWT + OAuth2 | Sessions only | Stateless = horizontal scaling friendly      |
+| Analytics DB      | MongoDB      | PostgreSQL    | Flexible event schema, append-heavy workload |
+| Short code gen    | nanoid       | uuid          | Shorter, URL-safe, faster                    |
+| Real-time updates | Polling      | WebSockets    | No genuine real-time need in this project    |
+| Language          | JavaScript   | TypeScript    | Focus on backend concepts, not type system   |
+
+## 12. Why do we do Redis
+
+| So Why Add Redis At All?
+| It comes down to speed and cost at scale.
+| PostgreSQL query: ~20-50ms (network + disk + query parsing)
+| Redis query: ~1-2ms (network + memory lookup only)
+
+| For a URL shortener specifically:
+| Reads (redirects) vastly outnumber writes (URL creation)
+| A popular short URL might get 10,000 clicks/hour
+
+| Without Redis:
+| 10,000 requests/hour → 10,000 PostgreSQL queries/hour
+| Each query costs CPU, memory, connection from the pool
+| PostgreSQL connection pool gets exhausted under load
+
+| With Redis:
+| 10,000 requests/hour → ~9,990 Redis hits + ~10 PostgreSQL queries
+| PostgreSQL barely feels it
+| Redis handles the load in memory at ~1ms per request
+
+Simple Rule For Real Life
+Add Redis when:
+✅ Same DB query runs hundreds of times per minute
+✅ Query result rarely changes
+✅ Response time matters to users
+
+Skip Redis when:
+❌ Low traffic (< a few hundred req/min)
+❌ Data changes frequently
+❌ Added complexity is not worth the gain

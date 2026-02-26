@@ -27,6 +27,16 @@ volumes:
 
 # ─── Services ───────────────────────────────────────────────
 services:
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: url_shortener
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
 
   # ── NGINX Gateway ─────────────────────── added in PR-22 ──
   # nginx:

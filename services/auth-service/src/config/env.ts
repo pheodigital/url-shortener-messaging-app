@@ -37,6 +37,10 @@ const envSchema = z.object({
     required_error: "GOOGLE_CALLBACK_URL is required",
   }),
 
+  // RabbitMQ — required from PR-14 onwards
+  RABBITMQ_URL: z.string().optional(),
+  RABBITMQ_QUEUE_CLICK_EVENTS: z.string().default("click_events"),
+
   // CORS
   ALLOWED_ORIGIN: z.string().default("http://localhost:3000"),
 });
