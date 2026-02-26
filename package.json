@@ -1,5 +1,20 @@
 {
-  "dependencies": {
-    "ioredis": "^5.9.3"
+  "name": "url-shortener",
+  "version": "1.0.0",
+  "description": "Production-grade URL shortener — monorepo",
+  "private": true,
+  "scripts": {
+    "dev:url": "npm run dev --prefix services/url-service",
+    "dev:auth": "npm run dev --prefix services/auth-service",
+    "dev:analytics": "npm run dev --prefix services/analytics-worker",
+    "test:url": "npm test --prefix services/url-service",
+    "test:auth": "npm test --prefix services/auth-service",
+    "test:analytics": "npm test --prefix services/analytics-worker",
+    "test:all": "npm run test:url && npm run test:auth && npm run test:analytics",
+    "build:url": "npm run build --prefix services/url-service",
+    "build:auth": "npm run build --prefix services/auth-service",
+    "build:analytics": "npm run build --prefix services/analytics-worker",
+    "build:all": "npm run build:url && npm run build:auth && npm run build:analytics",
+    "install:all": "npm install --prefix services/url-service && npm install --prefix services/auth-service && npm install --prefix services/analytics-worker"
   }
 }
