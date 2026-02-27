@@ -1,0 +1,108 @@
+// ─── Mocks must be declared before any imports ────────────
+jest.mock("../../config/mongodb", () => ({
+  __esModule: true,
+  connectMongoDB: jest.fn().mockResolvedValue(undefined),
+  checkMongoDBHealth: jest.fn().mockReturnValue("ok"),
+  disconnectMongoDB: jest.fn().mockResolvedValue(undefined),
+  default: { connection: { readyState: 1 } },
+}));
+
+const mockClickEvent = {
+  countDocuments: jest.fn(),
+  aggregate: jest.fn(),
+  distinct: jest.fn(),
+};
+
+jest.mock("../../models/ClickEvent", () => ({
+  __esModule: true,
+  default: mockClickEvent,
+}));
+
+import request from "supertest";
+import jwt from "jsonwebtoken";
+import app from "../../app";
+
+const TEST_TOKEN = jwt.sign(
+  { userId: "test-user-id", email: "test@example.com" },
+  process.env["JWT_ACCESS_SECRET"] ?? "test-secret-that-is-at-least-32-chars!!"
+);
+
+// ─── GET /api/stats/:shortcode ────────────────────────────
+describe("GET /api/stats/:shortcode", () => {
+  it("should return 200 with click stats for a shortcode", async () => {
+    mockClickEvent.countDocuments
+      .mockResolvedValueOnce(42)  // totalClicks
+      .mockResolvedValueOnce(5)   // clicksToday
+      .mockResolvedValueOnce(20); // clicksThisWeek
+
+    mockClickEvent.aggregate.mockResolvedValueOnce([
+      { userAgent: "curl/8.7.1", count: 30 },
+      { userAgent: "Mozilla/5.0", count: 12 },
+    ]);
+
+    const res = await request(app).get("/api/stats/abc1234");
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.status).toBe("success");
+    expect(res.body.data.shortcode).toBe("abc1234");
+    expect(res.body.data.totalClicks).toBe(42);
+    expect(res.body.data.clicksToday).toBe(5);
+    expect(res.body.data.clicksThisWeek).toBe(20);
+    expect(res.body.data.topUserAgents).toHaveLength(2);
+  });
+
+  it("should return 200 with zero stats for unknown shortcode", async () => {
+    mockClickEvent.countDocuments
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(0)
+      .mockResolvedValueOnce(0);
+
+    mockClickEvent.aggregate.mockResolvedValueOnce([]);
+
+    const res = await request(app).get("/api/stats/unknown");
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.data.totalClicks).toBe(0);
+    expect(res.body.data.topUserAgents).toEqual([]);
+  });
+});
+
+// ─── GET /api/stats/summary ───────────────────────────────
+describe("GET /api/stats/summary", () => {
+  it("should return 200 with summary stats when authenticated", async () => {
+    mockClickEvent.distinct.mockResolvedValueOnce(["abc1234", "xyz5678"]);
+    mockClickEvent.countDocuments
+      .mockResolvedValueOnce(100) // totalClicks
+      .mockResolvedValueOnce(10); // clicksToday
+
+    mockClickEvent.aggregate.mockResolvedValueOnce([
+      { shortcode: "abc1234", count: 80 },
+      { shortcode: "xyz5678", count: 20 },
+    ]);
+
+    const res = await request(app)
+      .get("/api/stats/summary")
+      .set("Authorization", `Bearer ${TEST_TOKEN}`);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.status).toBe("success");
+    expect(res.body.data.totalClicks).toBe(100);
+    expect(res.body.data.totalUrls).toBe(2);
+    expect(res.body.data.clicksToday).toBe(10);
+    expect(res.body.data.topShortcodes).toHaveLength(2);
+  });
+
+  it("should return 401 when no token provided", async () => {
+    const res = await request(app).get("/api/stats/summary");
+    expect(res.statusCode).toBe(401);
+    expect(res.body.message).toBe("No token provided");
+  });
+
+  it("should return 401 when token is invalid", async () => {
+    const res = await request(app)
+      .get("/api/stats/summary")
+      .set("Authorization", "Bearer invalid.token.here");
+    expect(res.statusCode).toBe(401);
+    expect(res.body.message).toBe("Invalid or expired token");
+  });
+});

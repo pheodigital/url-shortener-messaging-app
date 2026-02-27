@@ -7,14 +7,17 @@
     "dev:url": "npm run dev --prefix services/url-service",
     "dev:auth": "npm run dev --prefix services/auth-service",
     "dev:analytics": "npm run dev --prefix services/analytics-worker",
+    "dev:stats": "npm run dev --prefix services/analytics-service",
     "test:url": "npm test --prefix services/url-service",
     "test:auth": "npm test --prefix services/auth-service",
     "test:analytics": "npm test --prefix services/analytics-worker",
-    "test:all": "npm run test:url && npm run test:auth && npm run test:analytics",
+    "test:stats": "npm test --prefix services/analytics-service",
+    "test:all": "npm run test:url && npm run test:auth && npm run test:analytics && npm run test:stats",
     "build:url": "npm run build --prefix services/url-service",
     "build:auth": "npm run build --prefix services/auth-service",
     "build:analytics": "npm run build --prefix services/analytics-worker",
-    "build:all": "npm run build:url && npm run build:auth && npm run build:analytics",
-    "install:all": "npm install --prefix services/url-service && npm install --prefix services/auth-service && npm install --prefix services/analytics-worker"
+    "build:stats": "npm run build --prefix services/analytics-service",
+    "build:all": "npm run build:url && npm run build:auth && npm run build:analytics && npm run build:stats",
+    "install:all": "npm install --prefix services/url-service && npm install --prefix services/auth-service && npm install --prefix services/analytics-worker && npm install --prefix services/analytics-service"
   }
 }

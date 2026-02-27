@@ -40,7 +40,6 @@ const makeMessage = (content: object | string): ConsumeMessage => ({
     exchange: "",
     routingKey: "click_events",
     consumerTag: "test",
-    messageCount: 0,
   },
   properties: {
     contentType: "application/json",

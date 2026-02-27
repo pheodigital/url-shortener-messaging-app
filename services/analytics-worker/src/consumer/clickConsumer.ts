@@ -1,6 +1,6 @@
 import { ConsumeMessage } from "amqplib";
 import { getChannel } from "../config/rabbitmq";
-import ClickEventModel from "../models/ClickEvent";
+import clickEventModel from "../models/clickEvent";
 import logger from "../config/logger";
 import env from "../config/env";
 
@@ -48,7 +48,7 @@ const processMessage = async (msg: ConsumeMessage): Promise<void> => {
 
   // ── Store in MongoDB ──────────────────────────────────────
   try {
-    await ClickEventModel.create({
+    await clickEventModel.create({
       shortcode: raw.shortcode,
       longUrl: raw.longUrl,
       timestamp: new Date(raw.timestamp),
