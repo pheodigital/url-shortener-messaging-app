@@ -1,23 +1,17 @@
 import { Router } from "express";
 import { redirect } from "../../controllers/redirectController";
+import { redirectLimiter } from "../../middleware/rateLimiter";
 
 const router = Router();
 
 // ─── GET /:shortcode ──────────────────────────────────────
-// Public route — no auth needed, anyone can follow a short URL
+// Public route — no auth needed
 //
-// ⚠️  IMPORTANT — Registration Order:
-// This route MUST be registered LAST in app.ts
-// because /:shortcode is a catch-all pattern.
+// Middleware chain:
+//   redirectLimiter → 300 req/min per IP → 429 if exceeded
+//   redirect        → cache lookup → DB lookup → 302
 //
-// If registered before /api/urls:
-//   GET /api/urls → Express matches /:shortcode first
-//                 → shortcode = "api" → 404
-//                 → /api/urls never reached ❌
-//
-// If registered after /api/urls (correct):
-//   GET /api/urls → matches /api/urls first ✅
-//   GET /abc123   → falls through to /:shortcode ✅
-router.get("/:shortcode", redirect);
+// ⚠️  Must be registered LAST in app.ts (catch-all pattern)
+router.get("/:shortcode", redirectLimiter, redirect);
 
 export default router;

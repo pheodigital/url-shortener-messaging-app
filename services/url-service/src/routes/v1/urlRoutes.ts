@@ -2,6 +2,7 @@ import { Router } from "express";
 import { authenticate } from "../../middleware/authenticate";
 import { validate } from "../../middleware/validate";
 import { createUrlSchema } from "../../schemas/urlSchemas";
+import { apiLimiter } from "../../middleware/rateLimiter";
 import {
   createUrl,
   listUrls,
@@ -11,20 +12,28 @@ import {
 const router = Router();
 
 // ─── URL Routes ───────────────────────────────────────────
-// All routes require authentication from PR-13 onwards
-//
 // Middleware chain:
+//   apiLimiter   → 60 req/min per user → 429 if exceeded
 //   authenticate → verifies JWT, attaches req.user
 //   validate     → validates req.body (POST only)
 //   controller   → runs only if all middleware passes
+//
+// Note: apiLimiter runs BEFORE authenticate so it can still
+// rate limit requests with invalid tokens by IP fallback
 
-// POST /api/urls — create a short URL owned by authenticated user
-router.post("/", authenticate, validate(createUrlSchema), createUrl);
+// POST /api/urls
+router.post(
+  "/",
+  apiLimiter,
+  authenticate,
+  validate(createUrlSchema),
+  createUrl,
+);
 
-// GET /api/urls — list authenticated user's URLs only
-router.get("/", authenticate, listUrls);
+// GET /api/urls
+router.get("/", apiLimiter, authenticate, listUrls);
 
-// DELETE /api/urls/:id — soft delete (ownership check in controller)
-router.delete("/:id", authenticate, deleteUrl);
+// DELETE /api/urls/:id
+router.delete("/:id", apiLimiter, authenticate, deleteUrl);
 
 export default router;
