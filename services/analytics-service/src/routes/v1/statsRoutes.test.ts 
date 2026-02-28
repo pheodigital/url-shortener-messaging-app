@@ -13,7 +13,7 @@ const mockClickEvent = {
   distinct: jest.fn(),
 };
 
-jest.mock("../../models/ClickEvent", () => ({
+jest.mock("../../models/clickEvent", () => ({
   __esModule: true,
   default: mockClickEvent,
 }));
