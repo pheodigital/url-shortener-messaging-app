@@ -2,7 +2,7 @@
 
 A production-grade URL Shortener built to learn and practice **core backend engineering concepts** — from OAuth2 and caching to microservices, Kubernetes, and observability.
 
-> This is not just a toy project. Every technology choice mirrors real-world backend decisions made at scale.
+> This is not just a toy project. Every technology choice mirrors real-world backend decisions made at scale..
 
 ---
 
