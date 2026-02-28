@@ -1,5 +1,11 @@
 import type { Config } from "jest";
 
+// ─── Set env vars BEFORE Jest loads any modules ───────────
+// Prevents process.exit(1) from env validation in CI
+process.env["NODE_ENV"] = process.env["NODE_ENV"] ?? "test";
+process.env["JWT_ACCESS_SECRET"] =
+  process.env["JWT_ACCESS_SECRET"] ?? "test-secret-that-is-at-least-32-chars!!";
+
 const config: Config = {
   preset: "ts-jest",
   testEnvironment: "node",
