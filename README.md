@@ -2,7 +2,7 @@
 
 A production-grade URL Shortener built to learn and practice **core backend engineering concepts** — from OAuth2 and caching to microservices, Kubernetes, and observability.
 
-> This is not just a toy project. Every technology choice mirrors real-world backend decisions made at scale..
+> This is not just a toy project. Every technology choice mirrors real-world backend decisions made at scale.
 
 ---
 
@@ -11,10 +11,10 @@ A production-grade URL Shortener built to learn and practice **core backend engi
 Build a fully functional URL shortener (like bit.ly) that covers:
 
 - Authentication (OAuth2 + JWT)
-- Caching & Session Management (Redis) // https://upstash.com/
-- Async Processing (RabbitMQ) // https://cloudamqp.com/
+- Caching & Session Management (Redis)
+- Async Processing (RabbitMQ)
 - Microservices Architecture
-- Containerization (Docker) // https://hub.docker.com/
+- Containerization (Docker)
 - Orchestration (Kubernetes)
 - Observability (Prometheus, Grafana, OpenTelemetry)
 - CI/CD (GitHub Actions)
@@ -23,13 +23,13 @@ Build a fully functional URL shortener (like bit.ly) that covers:
 
 ## 🚀 What The App Does
 
-| Feature | Description |
-|---|---|
-| Shorten URL | User submits a long URL → gets back a short code (e.g. `short.ly/abc123`) |
-| Redirect | Anyone visits the short URL → instantly redirected to original |
-| Analytics | Dashboard shows clicks, timestamps, locations, devices |
-| Auth | Login with Google (OAuth2), protected routes via JWT |
-| Rate Limiting | Prevent abuse — X requests per IP per minute |
+| Feature       | Description                                                               |
+| ------------- | ------------------------------------------------------------------------- |
+| Shorten URL   | User submits a long URL → gets back a short code (e.g. `short.ly/abc123`) |
+| Redirect      | Anyone visits the short URL → instantly redirected to original            |
+| Analytics     | Dashboard shows clicks, timestamps, locations, devices                    |
+| Auth          | Login with Google (OAuth2), protected routes via JWT                      |
+| Rate Limiting | Prevent abuse — X requests per IP per minute                              |
 
 ---
 
@@ -53,69 +53,76 @@ The app is split into **3 independent microservices**:
 ## 🛠️ Tech Stack
 
 ### Core
-| Layer | Technology | Why |
-|---|---|---|
-| Language | Node.js 20 LTS | Non-blocking I/O, event loop, great for I/O-heavy services |
-| Framework | Express.js | Minimal, widely used, great for learning routing + middleware |
-| Validation | Zod | Schema validation, type-safe, clean error messages |
+
+| Layer      | Technology     | Why                                                           |
+| ---------- | -------------- | ------------------------------------------------------------- |
+| Language   | Node.js 20 LTS | Non-blocking I/O, event loop, great for I/O-heavy services    |
+| Framework  | Express.js     | Minimal, widely used, great for learning routing + middleware |
+| Validation | Zod            | Schema validation, type-safe, clean error messages            |
 
 ### Databases
-| Layer | Technology | Why |
-|---|---|---|
-| Primary DB | PostgreSQL 16 | ACID transactions, relational data (users, URLs) |
-| ORM | Prisma | Modern ORM, clean schema, auto migrations |
-| Cache + Sessions | Redis 7 | Sub-millisecond reads, TTL support, distributed sessions |
-| Analytics | MongoDB 7 | Flexible schema for event data, fast writes |
-| ODM | Mongoose | Schema + model layer for MongoDB |
+
+| Layer            | Technology    | Why                                                      |
+| ---------------- | ------------- | -------------------------------------------------------- |
+| Primary DB       | PostgreSQL 16 | ACID transactions, relational data (users, URLs)         |
+| ORM              | Prisma        | Modern ORM, clean schema, auto migrations                |
+| Cache + Sessions | Redis 7       | Sub-millisecond reads, TTL support, distributed sessions |
+| Analytics        | MongoDB 7     | Flexible schema for event data, fast writes              |
+| ODM              | Mongoose      | Schema + model layer for MongoDB                         |
 
 ### Auth
-| Layer | Technology | Why |
-|---|---|---|
-| OAuth2 | passport-google-oauth20 | Industry-standard Google login |
-| Tokens | jsonwebtoken (JWT) | Stateless auth, no session storage on server |
+
+| Layer  | Technology              | Why                                          |
+| ------ | ----------------------- | -------------------------------------------- |
+| OAuth2 | passport-google-oauth20 | Industry-standard Google login               |
+| Tokens | jsonwebtoken (JWT)      | Stateless auth, no session storage on server |
 
 ### Messaging
-| Layer | Technology | Why |
-|---|---|---|
+
+| Layer         | Technology | Why                                           |
+| ------------- | ---------- | --------------------------------------------- |
 | Message Queue | RabbitMQ 3 | Decouple click tracking from redirect (async) |
-| Client | amqplib | Node.js RabbitMQ client |
+| Client        | amqplib    | Node.js RabbitMQ client                       |
 
 ### Infrastructure
-| Layer | Technology | Why |
-|---|---|---|
-| Reverse Proxy | NGINX | Load balancing, rate limiting, gateway |
-| K8s Ingress | Traefik | Modern ingress controller (ingress-nginx retiring Mar 2026) |
-| Containers | Docker + Docker Compose | Reproducible environments |
-| Orchestration | Kubernetes (Minikube) | Production-grade container management |
+
+| Layer         | Technology              | Why                                                         |
+| ------------- | ----------------------- | ----------------------------------------------------------- |
+| Reverse Proxy | NGINX                   | Load balancing, rate limiting, gateway                      |
+| K8s Ingress   | Traefik                 | Modern ingress controller (ingress-nginx retiring Mar 2026) |
+| Containers    | Docker + Docker Compose | Reproducible environments                                   |
+| Orchestration | Kubernetes (Minikube)   | Production-grade container management                       |
 
 ### Observability
-| Layer | Technology | Why |
-|---|---|---|
-| Logging | Winston | Structured JSON logs, multiple transports |
-| Metrics | Prometheus + Grafana | Monitor request rates, latency, errors |
-| Tracing | OpenTelemetry | Trace a single request across all 3 services |
+
+| Layer   | Technology           | Why                                          |
+| ------- | -------------------- | -------------------------------------------- |
+| Logging | Winston              | Structured JSON logs, multiple transports    |
+| Metrics | Prometheus + Grafana | Monitor request rates, latency, errors       |
+| Tracing | OpenTelemetry        | Trace a single request across all 3 services |
 
 ### Dev & CI/CD
-| Layer | Technology | Why |
-|---|---|---|
-| Short codes | nanoid | Fast, URL-safe unique ID generation |
-| Testing | Jest + Supertest | Unit + integration tests |
-| CI/CD | GitHub Actions | Automated test + build + deploy pipeline |
-| Env management | dotenv | Per-environment config (dev/qa/prod) |
+
+| Layer          | Technology       | Why                                      |
+| -------------- | ---------------- | ---------------------------------------- |
+| Short codes    | nanoid           | Fast, URL-safe unique ID generation      |
+| Testing        | Jest + Supertest | Unit + integration tests                 |
+| CI/CD          | GitHub Actions   | Automated test + build + deploy pipeline |
+| Env management | dotenv           | Per-environment config (dev/qa/prod)     |
 
 ---
 
 ## ❌ What We Deliberately Excluded
 
-| Technology | Reason |
-|---|---|
-| TypeScript | Keeping focus on backend concepts, not type systems |
-| Kafka | RabbitMQ teaches the same async concepts; Kafka discussed theoretically |
-| GraphQL | REST is sufficient; avoids unnecessary complexity |
-| WebSockets | No real-time push needed; polling is fine for analytics dashboard |
-| Sequelize | Prisma has better DX for learning |
-| Istio | Too advanced; K8s networking is enough |
-| ingress-nginx | Retiring March 2026 — replaced with Traefik |
+| Technology    | Reason                                                                  |
+| ------------- | ----------------------------------------------------------------------- |
+| TypeScript    | Keeping focus on backend concepts, not type systems                     |
+| Kafka         | RabbitMQ teaches the same async concepts; Kafka discussed theoretically |
+| GraphQL       | REST is sufficient; avoids unnecessary complexity                       |
+| WebSockets    | No real-time push needed; polling is fine for analytics dashboard       |
+| Sequelize     | Prisma has better DX for learning                                       |
+| Istio         | Too advanced; K8s networking is enough                                  |
+| ingress-nginx | Retiring March 2026 — replaced with Traefik                             |
 
 ---
 
@@ -185,18 +192,18 @@ url-shortener/
 
 ## 🔢 Build Phases
 
-| Phase | What We Build | Concepts Covered |
-|---|---|---|
-| **1** | URL Service (CRUD) | Express, PostgreSQL, Prisma, REST API |
-| **2** | Redis Caching | Cache hit/miss, TTL, cache invalidation |
-| **3** | Auth Service | Google OAuth2, JWT, stateless sessions |
-| **4** | Analytics Worker | RabbitMQ, async processing, MongoDB |
-| **5** | Rate Limiting | Middleware, Redis counters, backpressure |
-| **6** | Docker | Dockerfile, docker-compose, networking |
-| **7** | NGINX Gateway | Reverse proxy, load balancing |
-| **8** | CI/CD | GitHub Actions, environment separation |
-| **9** | Kubernetes | Pods, services, deployments, Traefik ingress |
-| **10** | Observability | Prometheus, Grafana, OpenTelemetry tracing |
+| Phase  | What We Build      | Concepts Covered                             |
+| ------ | ------------------ | -------------------------------------------- |
+| **1**  | URL Service (CRUD) | Express, PostgreSQL, Prisma, REST API        |
+| **2**  | Redis Caching      | Cache hit/miss, TTL, cache invalidation      |
+| **3**  | Auth Service       | Google OAuth2, JWT, stateless sessions       |
+| **4**  | Analytics Worker   | RabbitMQ, async processing, MongoDB          |
+| **5**  | Rate Limiting      | Middleware, Redis counters, backpressure     |
+| **6**  | Docker             | Dockerfile, docker-compose, networking       |
+| **7**  | NGINX Gateway      | Reverse proxy, load balancing                |
+| **8**  | CI/CD              | GitHub Actions, environment separation       |
+| **9**  | Kubernetes         | Pods, services, deployments, Traefik ingress |
+| **10** | Observability      | Prometheus, Grafana, OpenTelemetry tracing   |
 
 ---
 
@@ -239,93 +246,59 @@ docker-compose up --build
 
 ---
 
-## 📚 Other informations (Full List)
+```markdown
+## 📚 Architecture FAQ: Analytics, RabbitMQ, and MongoDB
 
-What Each Service Does
-url-service         → handles redirects (GET /:shortcode)
-                      this is the HOT PATH — gets hit millions of times
+### What Each Service Does
 
-analytics-worker    → background worker
-                      listens to RabbitMQ queue
-                      saves click events to MongoDB
+| Service               | Purpose                                                                              |
+| --------------------- | ------------------------------------------------------------------------------------ |
+| **url-service**       | Handles redirects (GET /:shortcode) — the HOT PATH, hit millions of times            |
+| **analytics-worker**  | Background worker that listens to RabbitMQ and saves click events to MongoDB         |
+| **analytics-service** | HTTP API that reads from MongoDB and serves stats (totalClicks, topUserAgents, etc.) |
 
-analytics-service   → HTTP API
-                      reads from MongoDB
-                      serves stats like totalClicks, topUserAgents
+### Why Not Save Directly to MongoDB on Every Redirect?
 
-Why Not Save Directly To MongoDB On Every Redirect?
-This is the core question. You could do this:
-User clicks short URL
-  → url-service handles redirect
-  → url-service writes to MongoDB     ← direct write
-  → url-service returns 302
-The problem is speed and reliability:
-MongoDB write takes ~20-50ms
-Every single redirect now costs 20-50ms extra
+**The Problem:**
 
-At scale:
-  10,000 clicks/second
-  → 10,000 MongoDB writes/second
-  → MongoDB gets overwhelmed
-  → redirects slow down or fail
-  → users experience lag on every click
-The redirect is the most critical operation in the system. It must be as fast as possible — ideally under 5ms.
+- MongoDB write takes ~20-50ms per operation
+- At scale (10,000 clicks/second), direct writes cause overwhelm
+- Result: slow redirects, poor user experience
 
-Why RabbitMQ Solves This
-User clicks short URL
-  → url-service handles redirect
-  → url-service publishes to RabbitMQ  ← ~1ms, fire and forget
-  → url-service returns 302 immediately
+**The Core Issue:**
+The redirect is the most critical operation — it must complete in under 5ms to maintain a snappy user experience.
 
-Meanwhile (asynchronously):
-  → analytics-worker picks up the message
-  → writes to MongoDB at its own pace
-  → even if MongoDB is slow, redirects are not affected
-With RabbitMQ:
-  redirect cost    = cache lookup (~2ms) or DB lookup (~10ms)
-  analytics cost   = 0ms for the user — happens in background
+### Why RabbitMQ is the Solution
 
-Without RabbitMQ:
-  redirect cost    = cache/DB lookup + MongoDB write (~60ms total)
-  user waits longer on every single click
+**How it works:**
 
-The Other Benefit — Resilience
-MongoDB goes down for 5 minutes
-  
-  Without RabbitMQ:
-    → every redirect fails or is slow
-    → click data is lost
+1. User clicks short URL → url-service handles it
+2. url-service publishes to RabbitMQ (~1ms, fire-and-forget)
+3. url-service returns 302 immediately to user
+4. analytics-worker picks up the message asynchronously and writes to MongoDB
 
-  With RabbitMQ:
-    → redirects keep working perfectly
-    → click events queue up in RabbitMQ
-    → when MongoDB comes back up
-    → analytics-worker drains the queue
-    → no click data lost
+**Performance Impact:**
 
-Simple Analogy
-Restaurant kitchen analogy:
+- **With RabbitMQ:** redirect = cache/DB lookup (~2-10ms) + analytics async (~0ms to user)
+- **Without RabbitMQ:** redirect = DB lookup + MongoDB write (~60ms) — user waits
 
-Without RabbitMQ:
-  Waiter takes order → runs to kitchen → waits for receipt → comes back
-  Customer waits the whole time
+**Resilience Benefit:**
+If MongoDB goes down, redirects keep working perfectly — click events queue up in RabbitMQ and drain when MongoDB recovers. No data loss.
 
-With RabbitMQ:
-  Waiter takes order → drops ticket in queue → comes back immediately
-  Kitchen processes tickets at their own pace
-  Customer gets served faster
+### Why Separate analytics-worker and analytics-service?
 
-Why Two Separate Services (worker + service)?
-analytics-worker   → only writes to MongoDB (no HTTP)
-analytics-service  → only reads from MongoDB (HTTP API)
+**Separation of concerns:**
 
-If you combined them:
-  heavy write load could slow down read responses
-  scaling becomes harder
+- **analytics-worker** → only writes to MongoDB (heavy I/O)
+- **analytics-service** → only reads from MongoDB (HTTP API)
 
-Separated:
-  scale worker independently if writes are slow
-  scale service independently if reads are slow
-  one crashing does not affect the other
-This is the foundation of event-driven microservice architecture — and exactly what companies like Twitter, Uber, and LinkedIn use at scale.
+**Benefits:**
+
+- Scale write and read loads independently
+- One service crashing doesn't affect the other
+- Foundation of event-driven microservice architecture (used at Twitter, Uber, LinkedIn)
+```
+
+---
+
 > Built for learning. Designed like production.
