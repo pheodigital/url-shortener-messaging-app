@@ -1,63 +1,111 @@
-# ═══════════════════════════════════════════════════════════
-#  docker-compose.yml — URL Shortener + Analytics Platform
-#
-#  SKELETON — services are added phase by phase:
-#
-#  Phase 1  → structure only (this file)
-#  Phase 6  → Dockerfiles + full service definitions
-#  Phase 7  → NGINX gateway added
-#
-#  To start everything (Phase 6+):
-#    docker-compose up --build
-# ═══════════════════════════════════════════════════════════
-
 version: "3.9"
 
-# ─── Networks ───────────────────────────────────────────────
+# ─── URL Shortener — docker-compose ──────────────────────
+#
+# External services (managed in the cloud):
+#   PostgreSQL  → Neon
+#   Redis       → Upstash or Redis Cloud
+#   RabbitMQ    → CloudAMQP
+#   MongoDB     → MongoDB Atlas
+#
+# This file manages only our own services.
+# All env vars are loaded from each service's .env file.
+#
+# Usage:
+#   docker-compose up --build          start all services
+#   docker-compose up --build -d       start in background
+#   docker-compose down                stop all services
+#   docker-compose logs -f             tail all logs
+#   docker-compose logs -f url-service tail one service
+
 networks:
   app-network:
     driver: bridge
 
-# ─── Volumes ────────────────────────────────────────────────
-volumes:
-  pgdata:
-  redisdata:
-  mongodata:
-  rabbitmqdata:
-
-# ─── Services ───────────────────────────────────────────────
 services:
-  postgres:
-    image: postgres:16
-    container_name: postgres
-    environment:
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: url_shortener
+  # ─── Auth Service ─────────────────────────────────────
+  # Handles Google OAuth2 + JWT issuance
+  auth-service:
+    build:
+      context: ./services/auth-service
+      dockerfile: Dockerfile
+    container_name: auth-service
     ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
+      - "3001:3001"
+    env_file:
+      - ./services/auth-service/.env
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
 
-  # ── NGINX Gateway ─────────────────────── added in PR-22 ──
+  # ─── URL Service ──────────────────────────────────────
+  # Core URL shortening + redirect service
+  url-service:
+    build:
+      context: ./services/url-service
+      dockerfile: Dockerfile
+    container_name: url-service
+    ports:
+      - "3002:3002"
+    env_file:
+      - ./services/url-service/.env
+    networks:
+      - app-network
+    restart: unless-stopped
+    depends_on:
+      auth-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ─── Analytics Worker ─────────────────────────────────
+  # Background worker — no HTTP server, no ports
+  # Consumes click_events from RabbitMQ → stores in MongoDB
+  analytics-worker:
+    build:
+      context: ./services/analytics-worker
+      dockerfile: Dockerfile
+    container_name: analytics-worker
+    env_file:
+      - ./services/analytics-worker/.env
+    networks:
+      - app-network
+    restart: unless-stopped
+    depends_on:
+      url-service:
+        condition: service_healthy
+
+  # ─── Analytics Service ────────────────────────────────
+  # HTTP API for click stats — reads from MongoDB
+  analytics-service:
+    build:
+      context: ./services/analytics-service
+      dockerfile: Dockerfile
+    container_name: analytics-service
+    ports:
+      - "3003:3003"
+    env_file:
+      - ./services/analytics-service/.env
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ─── NGINX Gateway ────────────────────────────────────
+  # Added in PR-22
   # nginx:
-
-  # ── Auth Service ──────────────────────── added in PR-20 ──
-  # auth-service:
-
-  # ── URL Service ───────────────────────── added in PR-20 ──
-  # url-service:
-
-  # ── Analytics Worker ──────────────────── added in PR-20 ──
-  # analytics-worker:
-
-  # ── PostgreSQL ────────────────────────── added in PR-21 ──
-  # postgres:
-
-  # ── Redis ─────────────────────────────── added in PR-21 ──
-  # redis:
-
-  # ── MongoDB ───────────────────────────── added in PR-21 ──
-  # mongodb:
-
-  # ── RabbitMQ ──────────────────────────── added in PR-21 ──
-  # rabbitmq:
