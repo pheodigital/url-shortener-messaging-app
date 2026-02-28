@@ -239,4 +239,93 @@ docker-compose up --build
 
 ---
 
+## 📚 Other informations (Full List)
+
+What Each Service Does
+url-service         → handles redirects (GET /:shortcode)
+                      this is the HOT PATH — gets hit millions of times
+
+analytics-worker    → background worker
+                      listens to RabbitMQ queue
+                      saves click events to MongoDB
+
+analytics-service   → HTTP API
+                      reads from MongoDB
+                      serves stats like totalClicks, topUserAgents
+
+Why Not Save Directly To MongoDB On Every Redirect?
+This is the core question. You could do this:
+User clicks short URL
+  → url-service handles redirect
+  → url-service writes to MongoDB     ← direct write
+  → url-service returns 302
+The problem is speed and reliability:
+MongoDB write takes ~20-50ms
+Every single redirect now costs 20-50ms extra
+
+At scale:
+  10,000 clicks/second
+  → 10,000 MongoDB writes/second
+  → MongoDB gets overwhelmed
+  → redirects slow down or fail
+  → users experience lag on every click
+The redirect is the most critical operation in the system. It must be as fast as possible — ideally under 5ms.
+
+Why RabbitMQ Solves This
+User clicks short URL
+  → url-service handles redirect
+  → url-service publishes to RabbitMQ  ← ~1ms, fire and forget
+  → url-service returns 302 immediately
+
+Meanwhile (asynchronously):
+  → analytics-worker picks up the message
+  → writes to MongoDB at its own pace
+  → even if MongoDB is slow, redirects are not affected
+With RabbitMQ:
+  redirect cost    = cache lookup (~2ms) or DB lookup (~10ms)
+  analytics cost   = 0ms for the user — happens in background
+
+Without RabbitMQ:
+  redirect cost    = cache/DB lookup + MongoDB write (~60ms total)
+  user waits longer on every single click
+
+The Other Benefit — Resilience
+MongoDB goes down for 5 minutes
+  
+  Without RabbitMQ:
+    → every redirect fails or is slow
+    → click data is lost
+
+  With RabbitMQ:
+    → redirects keep working perfectly
+    → click events queue up in RabbitMQ
+    → when MongoDB comes back up
+    → analytics-worker drains the queue
+    → no click data lost
+
+Simple Analogy
+Restaurant kitchen analogy:
+
+Without RabbitMQ:
+  Waiter takes order → runs to kitchen → waits for receipt → comes back
+  Customer waits the whole time
+
+With RabbitMQ:
+  Waiter takes order → drops ticket in queue → comes back immediately
+  Kitchen processes tickets at their own pace
+  Customer gets served faster
+
+Why Two Separate Services (worker + service)?
+analytics-worker   → only writes to MongoDB (no HTTP)
+analytics-service  → only reads from MongoDB (HTTP API)
+
+If you combined them:
+  heavy write load could slow down read responses
+  scaling becomes harder
+
+Separated:
+  scale worker independently if writes are slow
+  scale service independently if reads are slow
+  one crashing does not affect the other
+This is the foundation of event-driven microservice architecture — and exactly what companies like Twitter, Uber, and LinkedIn use at scale.
 > Built for learning. Designed like production.
