@@ -18,7 +18,7 @@ jest.mock("../config/rabbitmq", () => ({
 
 const mockClickEventCreate = jest.fn();
 
-jest.mock("../models/ClickEvent", () => ({
+jest.mock("../models/clickEvent", () => ({
   __esModule: true,
   default: {
     create: mockClickEventCreate,
