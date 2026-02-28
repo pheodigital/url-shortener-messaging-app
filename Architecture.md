@@ -1,6 +1,6 @@
 # 🏛️ Architecture — URL Shortener + Analytics Platform
 
-This document covers the structural architecture: how services are laid out, how they communicate, how data flows, and how the system is deployed.
+This document covers the structural architecture: how services are laid out, how they communicate, how data flows, and how the system is deployed..
 
 ---
 
