@@ -11,8 +11,8 @@ A production-grade URL Shortener built to learn and practice **core backend engi
 Build a fully functional URL shortener (like bit.ly) that covers:
 
 - Authentication (OAuth2 + JWT)
-- Caching & Session Management (Redis)
-- Async Processing (RabbitMQ)
+- Caching & Session Management (Redis) // https://upstash.com/
+- Async Processing (RabbitMQ) // https://www.cloudamqp.com/
 - Microservices Architecture
 - Containerization (Docker)
 - Orchestration (Kubernetes)
