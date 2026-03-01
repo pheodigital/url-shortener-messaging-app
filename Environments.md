@@ -1,5 +1,64 @@
 # GitHub Environments Setup Guide
 
+---
+
+## What Is GHCR
+
+GHCR stands for **GitHub Container Registry**.
+
+Think of it like a **storage locker for Docker images** — but the locker is built directly into GitHub.
+
+### What It Does
+
+```
+You write code
+  → GitHub Actions builds a Docker image
+  → Docker image gets stored in GHCR
+  → Your server pulls the image from GHCR
+  → Server runs the image as a container
+```
+
+### Why GHCR Instead Of Docker Hub
+
+```
+Docker Hub (what we had before):
+  → Separate account needed
+  → Free tier has pull rate limits
+  → Need to manage DOCKERHUB_USERNAME + DOCKERHUB_TOKEN secrets
+  → Your images live at: hub.docker.com/r/pheodigital/url-service
+
+GHCR (what we switched to):
+  → Built into GitHub — no separate account
+  → Uses GITHUB_TOKEN which is automatic — no secrets to manage
+  → No pull rate limits for private repos
+  → Your images live at: ghcr.io/pheodigital/url-service
+  → Images linked directly to your GitHub repo
+```
+
+### Real World Analogy
+
+```
+Docker Hub  → like storing your files on Dropbox
+              works fine but separate login, separate service
+
+GHCR        → like storing your files on Google Drive
+              when you already use Gmail
+              everything is in one place, one login, works together
+```
+
+### What The Image Address Looks Like
+
+```
+Docker Hub:   pheodigital/url-service:latest
+GHCR:         ghcr.io/pheodigital/url-service:latest
+
+The only difference is the prefix ghcr.io
+```
+
+In short — GHCR is Docker Hub but built into GitHub. Since we are already using GitHub for everything, it makes sense to keep images there too.
+
+---
+
 ## What Are GitHub Environments
 
 GitHub Environments let you control how and when deployments happen.
