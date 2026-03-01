@@ -1,0 +1,183 @@
+name: CD — Deploy
+
+# ─── Triggers ─────────────────────────────────────────────
+#
+# dev  → automatic on push to main (after docker.yml builds images)
+# qa   → manual trigger only
+# prod → manual trigger + requires approval in GitHub Environments
+#
+# How to trigger qa or prod manually:
+#   GitHub → Actions → CD Deploy → Run workflow
+#   Select environment: qa or prod
+#   Enter the image tag to deploy (e.g. sha-abc1234)
+
+on:
+  # Automatic — triggers after docker.yml completes on main
+  workflow_run:
+    workflows: ["Docker Build & Push"]
+    types:
+      - completed
+    branches:
+      - main
+
+  # Manual — for qa and prod deployments
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to deploy to"
+        required: true
+        type: choice
+        options:
+          - dev
+          - qa
+          - prod
+      image_tag:
+        description: "Image tag to deploy (e.g. sha-abc1234 or latest)"
+        required: true
+        default: "latest"
+
+# ─── Permissions ──────────────────────────────────────────
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+
+  # ─── Determine Environment ──────────────────────────────
+  # Figures out which environment to deploy to based on trigger
+  setup:
+    name: Setup deployment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.set-env.outputs.environment }}
+      image_tag: ${{ steps.set-env.outputs.image_tag }}
+
+    steps:
+      - name: Set environment and image tag
+        id: set-env
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            # Automatic trigger from docker.yml — deploy to dev
+            echo "environment=dev" >> $GITHUB_OUTPUT
+            echo "image_tag=latest" >> $GITHUB_OUTPUT
+          else
+            # Manual trigger — use selected environment and tag
+            echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+            echo "image_tag=${{ github.event.inputs.image_tag }}" >> $GITHUB_OUTPUT
+          fi
+
+  # ─── Deploy ─────────────────────────────────────────────
+  # Deploys all 4 services to the selected environment
+  #
+  # Each environment in GitHub has its own:
+  #   - Secrets (server host, user, SSH key)
+  #   - Protection rules (prod requires approval)
+  #
+  # Setup GitHub Environments:
+  #   Repo → Settings → Environments → New environment
+  #   Create: dev, qa, prod
+  #   For prod: add Required reviewers
+  deploy:
+    name: Deploy to ${{ needs.setup.outputs.environment }}
+    runs-on: ubuntu-latest
+    needs: setup
+
+    # ── GitHub Environment ──────────────────────────────────
+    # This links to the GitHub Environment config
+    # prod environment will pause here and wait for approval
+    environment: ${{ needs.setup.outputs.environment }}
+
+    env:
+      IMAGE_TAG: ${{ needs.setup.outputs.image_tag }}
+      ENVIRONMENT: ${{ needs.setup.outputs.environment }}
+      REGISTRY: ghcr.io
+      OWNER: ${{ github.repository_owner }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # ── Login to GHCR to pull images ────────────────────
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Verify images exist before deploying ────────────
+      - name: Verify images exist
+        run: |
+          for service in url-service auth-service analytics-worker analytics-service; do
+            echo "Checking ghcr.io/${{ env.OWNER }}/$service:${{ env.IMAGE_TAG }}"
+            docker pull ghcr.io/${{ env.OWNER }}/$service:${{ env.IMAGE_TAG }}
+            echo "✅ $service image found"
+          done
+
+      # ── Deploy via SSH ────────────────────────────────────
+      # Connects to the environment server via SSH
+      # Pulls latest images and restarts containers
+      #
+      # Required secrets per environment (set in GitHub Environments):
+      #   SERVER_HOST → IP address of the server
+      #   SERVER_USER → SSH username (e.g. ubuntu)
+      #   SERVER_SSH_KEY → private SSH key for the server
+      - name: Deploy to ${{ env.ENVIRONMENT }} server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            set -e
+
+            echo "🚀 Deploying to ${{ env.ENVIRONMENT }}"
+            echo "📦 Image tag: ${{ env.IMAGE_TAG }}"
+
+            # Navigate to app directory on server
+            cd ~/url-shortener
+
+            # Pull latest images from GHCR
+            docker pull ghcr.io/${{ env.OWNER }}/url-service:${{ env.IMAGE_TAG }}
+            docker pull ghcr.io/${{ env.OWNER }}/auth-service:${{ env.IMAGE_TAG }}
+            docker pull ghcr.io/${{ env.OWNER }}/analytics-worker:${{ env.IMAGE_TAG }}
+            docker pull ghcr.io/${{ env.OWNER }}/analytics-service:${{ env.IMAGE_TAG }}
+
+            # Update IMAGE_TAG in environment file
+            export IMAGE_TAG=${{ env.IMAGE_TAG }}
+            export OWNER=${{ env.OWNER }}
+
+            # Restart services with new images
+            docker-compose pull
+            docker-compose up -d --no-build
+
+            # Verify services are healthy
+            sleep 10
+            docker-compose ps
+
+            echo "✅ Deployment to ${{ env.ENVIRONMENT }} complete"
+
+      # ── Post deployment health check ─────────────────────
+      - name: Health check after deployment
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            echo "Running health checks..."
+
+            # Wait for services to be ready
+            sleep 15
+
+            # Check each service health endpoint via NGINX
+            curl -f http://localhost/health || exit 1
+            echo "✅ url-service healthy"
+
+            curl -f http://localhost:3001/health || exit 1
+            echo "✅ auth-service healthy"
+
+            curl -f http://localhost:3003/health || exit 1
+            echo "✅ analytics-service healthy"
+
+            echo "✅ All services healthy — deployment successful"
