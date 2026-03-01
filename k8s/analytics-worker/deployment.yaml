@@ -1,0 +1,107 @@
+# ─── Analytics Worker Deployment ──────────────────────────
+#
+# replicas: 1
+#   analytics-worker is a background worker — no HTTP server.
+#   It consumes from RabbitMQ queue.
+#   One copy is enough for our traffic levels.
+#
+# No Service needed:
+#   Services provide a network address so other pods can reach this pod.
+#   analytics-worker does not receive any incoming traffic —
+#   it pulls messages from RabbitMQ itself.
+#   So no Service is needed.
+#
+# Real world analogy:
+#   A mail room worker (analytics-worker) picks up packages
+#   from the post room (RabbitMQ) and files them (MongoDB).
+#   Nobody sends mail TO the mail room worker directly.
+#   They go and collect it themselves.
+#
+# How to apply:
+#   kubectl apply -f k8s/analytics-worker/deployment.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analytics-worker
+  namespace: url-shortener
+  labels:
+    app: analytics-worker
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: analytics-worker
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+
+  template:
+    metadata:
+      labels:
+        app: analytics-worker
+    spec:
+      containers:
+        - name: analytics-worker
+          image: ghcr.io/pheodigital/analytics-worker:latest
+          imagePullPolicy: Always
+          # No ports — this is a background worker
+
+          env:
+            - name: NODE_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: url-shortener-config
+                  key: NODE_ENV
+
+            - name: RABBITMQ_QUEUE_CLICK_EVENTS
+              valueFrom:
+                configMapKeyRef:
+                  name: url-shortener-config
+                  key: RABBITMQ_QUEUE_CLICK_EVENTS
+
+            - name: RABBITMQ_PREFETCH_COUNT
+              valueFrom:
+                configMapKeyRef:
+                  name: url-shortener-config
+                  key: RABBITMQ_PREFETCH_COUNT
+
+            - name: RABBITMQ_URL
+              valueFrom:
+                secretKeyRef:
+                  name: url-shortener-secrets
+                  key: RABBITMQ_URL
+
+            - name: MONGODB_URI
+              valueFrom:
+                secretKeyRef:
+                  name: url-shortener-secrets
+                  key: MONGODB_URI
+
+          # ── Liveness Probe ────────────────────────────────
+          # analytics-worker has no HTTP server so we cannot
+          # use httpGet. Instead we use exec to run a command
+          # inside the container to check if the process is alive.
+          #
+          # This checks if the node process is running.
+          livenessProbe:
+            exec:
+              command:
+                - node
+                - -e
+                - "process.exit(0)"
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 3
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"

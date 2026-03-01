@@ -1,0 +1,79 @@
+# ─── HorizontalPodAutoscaler — URL Service ────────────────
+#
+# What is an HPA?
+#   HPA watches CPU usage across all url-service pods.
+#   When CPU goes above 70% it adds more pods automatically.
+#   When traffic drops it removes pods to save money.
+#
+# Real world analogy:
+#   Imagine a supermarket.
+#   Normal day   → 3 checkout lanes open
+#   Saturday rush → CPU hits 70% → 10 checkout lanes open automatically
+#   Rush ends    → lanes close automatically back to 3
+#   You (the manager) do nothing — it self-manages
+#
+# Our configuration:
+#   minReplicas: 3   → always at least 3 pods running
+#   maxReplicas: 10  → never more than 10 pods
+#   CPU target: 70%  → scale up when average CPU across pods hits 70%
+#
+# Example scaling:
+#   3 pods at 90% CPU → HPA adds pods until average drops to ~70%
+#   Traffic drops     → HPA removes pods until back to minimum 3
+#
+# How to apply:
+#   kubectl apply -f k8s/url-service/hpa.yaml
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: url-service-hpa
+  namespace: url-shortener
+spec:
+  # Which deployment to scale
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: url-service
+
+  minReplicas: 3
+  maxReplicas: 10
+
+  metrics:
+    # ── CPU Scaling ────────────────────────────────────────
+    # Scale up when average CPU across all pods exceeds 70%
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+    # ── Memory Scaling ────────────────────────────────────
+    # Also scale if memory hits 80%
+    # Protects against memory leaks causing OOM kills
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+  # ── Scaling Behaviour ─────────────────────────────────
+  behavior:
+    scaleUp:
+      # Scale up fast — traffic spikes need quick response
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Pods
+          value: 2 # add max 2 pods at a time
+          periodSeconds: 30 # every 30 seconds
+
+    scaleDown:
+      # Scale down slowly — avoid yo-yo effect
+      # Wait 5 minutes before removing pods
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1 # remove max 1 pod at a time
+          periodSeconds: 60 # every 60 seconds

@@ -1,0 +1,7 @@
+# Service = a stable network address so OTHER pods can send traffic TO this pod
+
+# analytics-worker never receives traffic
+# It PULLS messages from RabbitMQ itself
+# Nothing talks TO analytics-worker
+
+# Therefore no service.yaml needed — this is correct

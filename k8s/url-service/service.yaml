@@ -1,0 +1,25 @@
+# ─── URL Service — Kubernetes Service ─────────────────────
+#
+# Same pattern as auth-service/service.yaml
+# ClusterIP — internal traffic only
+# Internet traffic comes through Ingress
+#
+# How to apply:
+#   kubectl apply -f k8s/url-service/service.yaml
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: url-service
+  namespace: url-shortener
+  labels:
+    app: url-service
+spec:
+  type: ClusterIP
+  selector:
+    app: url-service
+  ports:
+    - name: http
+      port: 3002
+      targetPort: 3002
+      protocol: TCP

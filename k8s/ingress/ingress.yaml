@@ -1,0 +1,110 @@
+# ─── Ingress ──────────────────────────────────────────────
+#
+# What is an Ingress?
+#   Ingress is the front door of your entire application.
+#   It is the only thing exposed to the internet.
+#   All traffic comes in through Ingress and gets routed
+#   to the right service based on the URL path.
+#
+# Real world analogy:
+#   A hotel reception desk.
+#   All guests (requests) enter through the front door (Ingress).
+#   The receptionist (Ingress rules) directs them:
+#     "Restaurant? Go left  → url-service"
+#     "Spa? Go right        → analytics-service"
+#     "Check in? Go upstairs → auth-service"
+#
+# Routing rules:
+#   /auth/*      → auth-service:3001
+#   /api/urls*   → url-service:3002
+#   /api/stats*  → analytics-service:3003
+#   /health      → url-service:3002
+#   /*           → url-service:3002 (shortcode redirects)
+#
+# Prerequisites:
+#   NGINX Ingress Controller must be installed in your cluster.
+#   On GKE: enabled by default
+#   Manually: kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.8.2/deploy/static/provider/cloud/deploy.yaml
+#
+# How to apply:
+#   kubectl apply -f k8s/ingress/ingress.yaml
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: url-shortener-ingress
+  namespace: url-shortener
+  annotations:
+    # Use NGINX ingress controller
+    kubernetes.io/ingress.class: "nginx"
+
+    # ── Proxy Settings ──────────────────────────────────
+    # Pass real client IP to services for correct rate limiting
+    nginx.ingress.kubernetes.io/use-forwarded-headers: "true"
+    nginx.ingress.kubernetes.io/proxy-real-ip-cidr: "0.0.0.0/0"
+
+    # ── Timeouts ────────────────────────────────────────
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "10"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "30"
+
+    # ── CORS ────────────────────────────────────────────
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+
+spec:
+  rules:
+    - host: url-shortener.example.com # ← update to your domain
+      http:
+        paths:
+          # ── Auth Service ─────────────────────────────
+          # /auth/* → auth-service
+          # Google OAuth routes + JWT endpoints
+          - path: /auth
+            pathType: Prefix
+            backend:
+              service:
+                name: auth-service
+                port:
+                  number: 3001
+
+          # ── URL Management ───────────────────────────
+          # /api/urls* → url-service
+          # Create, list, delete short URLs
+          - path: /api/urls
+            pathType: Prefix
+            backend:
+              service:
+                name: url-service
+                port:
+                  number: 3002
+
+          # ── Analytics ────────────────────────────────
+          # /api/stats* → analytics-service
+          # Click stats endpoints
+          - path: /api/stats
+            pathType: Prefix
+            backend:
+              service:
+                name: analytics-service
+                port:
+                  number: 3003
+
+          # ── Health Check ─────────────────────────────
+          - path: /health
+            pathType: Exact
+            backend:
+              service:
+                name: url-service
+                port:
+                  number: 3002
+
+          # ── Shortcode Redirects ───────────────────────
+          # /* → url-service (catch-all, must be last)
+          # Handles GET /:shortcode → 302 redirect
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: url-service
+                port:
+                  number: 3002

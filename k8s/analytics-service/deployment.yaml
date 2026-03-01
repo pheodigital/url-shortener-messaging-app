@@ -1,0 +1,96 @@
+# ─── Analytics Service Deployment ─────────────────────────
+#
+# replicas: 1
+#   analytics-service serves stats — read-only queries.
+#   Low traffic compared to url-service.
+#   One copy is sufficient.
+#
+# How to apply:
+#   kubectl apply -f k8s/analytics-service/deployment.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: analytics-service
+  namespace: url-shortener
+  labels:
+    app: analytics-service
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: analytics-service
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+
+  template:
+    metadata:
+      labels:
+        app: analytics-service
+    spec:
+      containers:
+        - name: analytics-service
+          image: ghcr.io/pheodigital/analytics-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3003
+
+          env:
+            - name: NODE_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: url-shortener-config
+                  key: NODE_ENV
+
+            - name: PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: url-shortener-config
+                  key: ANALYTICS_SERVICE_PORT
+
+            - name: ALLOWED_ORIGIN
+              valueFrom:
+                configMapKeyRef:
+                  name: url-shortener-config
+                  key: ALLOWED_ORIGIN
+
+            - name: MONGODB_URI
+              valueFrom:
+                secretKeyRef:
+                  name: url-shortener-secrets
+                  key: MONGODB_URI
+
+            - name: JWT_ACCESS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: url-shortener-secrets
+                  key: JWT_ACCESS_SECRET
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3003
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3003
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"

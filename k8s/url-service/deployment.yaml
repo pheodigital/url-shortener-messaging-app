@@ -1,0 +1,148 @@
+# ─── URL Service Deployment ───────────────────────────────
+#
+# replicas: 3
+#   url-service is the hottest path in our system.
+#   Every single redirect goes through it.
+#   3 copies means 3x the capacity and if one pod dies
+#   the other 2 keep serving traffic immediately.
+#
+# HPA (HorizontalPodAutoscaler) in hpa.yaml will
+# automatically scale this from 3 → 10 pods when CPU > 70%
+#
+# How to apply:
+#   kubectl apply -f k8s/url-service/deployment.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: url-service
+  namespace: url-shortener
+  labels:
+    app: url-service
+spec:
+  replicas: 3
+
+  selector:
+    matchLabels:
+      app: url-service
+
+  # ── Rolling Update ─────────────────────────────────────
+  # With 3 replicas and maxUnavailable: 1:
+  #   → keep at least 2 pods serving traffic at all times
+  #   → update one pod at a time
+  #   → zero downtime deployment
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+
+  template:
+    metadata:
+      labels:
+        app: url-service
+    spec:
+      containers:
+        - name: url-service
+          image: ghcr.io/pheodigital/url-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3002
+
+          env:
+            - name: NODE_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: url-shortener-config
+                  key: NODE_ENV
+
+            - name: PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: url-shortener-config
+                  key: URL_SERVICE_PORT
+
+            - name: BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: url-shortener-config
+                  key: BASE_URL
+
+            - name: RABBITMQ_QUEUE_CLICK_EVENTS
+              valueFrom:
+                configMapKeyRef:
+                  name: url-shortener-config
+                  key: RABBITMQ_QUEUE_CLICK_EVENTS
+
+            - name: CACHE_TTL_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: url-shortener-config
+                  key: CACHE_TTL_SECONDS
+
+            - name: RATE_LIMIT_REDIRECT_RPM
+              valueFrom:
+                configMapKeyRef:
+                  name: url-shortener-config
+                  key: RATE_LIMIT_REDIRECT_RPM
+
+            - name: RATE_LIMIT_API_RPM
+              valueFrom:
+                configMapKeyRef:
+                  name: url-shortener-config
+                  key: RATE_LIMIT_API_RPM
+
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: url-shortener-secrets
+                  key: DATABASE_URL
+
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: url-shortener-secrets
+                  key: REDIS_URL
+
+            - name: RABBITMQ_URL
+              valueFrom:
+                secretKeyRef:
+                  name: url-shortener-secrets
+                  key: RABBITMQ_URL
+
+            - name: JWT_ACCESS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: url-shortener-secrets
+                  key: JWT_ACCESS_SECRET
+
+          # ── Liveness Probe ───────────────────────────────
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3002
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 3
+
+          # ── Readiness Probe ──────────────────────────────
+          # More frequent checks — url-service is critical
+          # Pod only receives traffic when healthy
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3002
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+
+          # ── Resources ────────────────────────────────────
+          # url-service handles the most traffic
+          # Give it more CPU than other services
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m" # 1 full CPU core at max
+              memory: "512Mi"

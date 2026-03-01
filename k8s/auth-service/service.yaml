@@ -1,0 +1,45 @@
+# ─── Auth Service — Kubernetes Service ────────────────────
+#
+# What is a Kubernetes Service?
+#   Pods come and go — they get restarted, replaced, scaled.
+#   Their IP addresses change every time.
+#   A Service gives a STABLE address that never changes.
+#
+# Real world analogy:
+#   Imagine a call centre with 10 agents (pods).
+#   Agents come and go — sick days, shifts.
+#   But the phone number (Service) never changes.
+#   You always call the same number and get connected
+#   to an available agent automatically.
+#
+# ClusterIP:
+#   This service is only reachable INSIDE the cluster.
+#   Other services call auth-service using:
+#     http://auth-service.url-shortener.svc.cluster.local:3001
+#   Or just:
+#     http://auth-service:3001  (within same namespace)
+#
+# How to apply:
+#   kubectl apply -f k8s/auth-service/service.yaml
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  namespace: url-shortener
+  labels:
+    app: auth-service
+spec:
+  # ClusterIP = internal only, not accessible from internet
+  # Traffic from internet comes through Ingress → url-service or auth-service
+  type: ClusterIP
+
+  selector:
+    # Routes traffic to pods with label app: auth-service
+    app: auth-service
+
+  ports:
+    - name: http
+      port: 3001 # port the Service listens on
+      targetPort: 3001 # port the container listens on
+      protocol: TCP

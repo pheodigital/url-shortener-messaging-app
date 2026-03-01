@@ -1,0 +1,176 @@
+# ─── Auth Service Deployment ──────────────────────────────
+#
+# What is a Deployment?
+#   A Deployment tells Kubernetes how to run your app.
+#   It says: "run 1 copy of auth-service, using this image,
+#   with these environment variables, and keep it healthy"
+#
+# replicas: 1
+#   Auth service gets 1 copy — it handles low traffic
+#   (only called on login/logout, not on every redirect)
+#
+# How to apply:
+#   kubectl apply -f k8s/auth-service/deployment.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: url-shortener
+  labels:
+    app: auth-service
+spec:
+  replicas: 1
+
+  # ── Selector ──────────────────────────────────────────────
+  # Kubernetes uses this to find the pods belonging to this deployment
+  selector:
+    matchLabels:
+      app: auth-service
+
+  # ── Rolling Update Strategy ───────────────────────────────
+  # How to deploy new versions without downtime
+  #
+  # maxUnavailable: 0  → never kill old pod before new one is ready
+  # maxSurge: 1        → spin up 1 extra pod during deployment
+  #
+  # Flow:
+  #   1. Start new pod with new code
+  #   2. Wait for it to pass health check
+  #   3. Send traffic to new pod
+  #   4. Kill old pod
+  #   = zero downtime
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+
+  template:
+    metadata:
+      labels:
+        app: auth-service
+    spec:
+      containers:
+        - name: auth-service
+          # Image from GHCR — built by docker.yml GitHub Action
+          # github.repository_owner = pheodigital
+          image: ghcr.io/pheodigital/auth-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 3001
+
+          # ── Environment Variables ──────────────────────────
+          # Values come from ConfigMap (non-secret) and Secret (sensitive)
+          env:
+            - name: NODE_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: url-shortener-config
+                  key: NODE_ENV
+
+            - name: PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: url-shortener-config
+                  key: AUTH_SERVICE_PORT
+
+            - name: ALLOWED_ORIGIN
+              valueFrom:
+                configMapKeyRef:
+                  name: url-shortener-config
+                  key: ALLOWED_ORIGIN
+
+            - name: GOOGLE_CALLBACK_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: url-shortener-config
+                  key: GOOGLE_CALLBACK_URL
+
+            - name: JWT_ACCESS_EXPIRES_IN
+              valueFrom:
+                configMapKeyRef:
+                  name: url-shortener-config
+                  key: JWT_ACCESS_EXPIRES_IN
+
+            - name: JWT_REFRESH_EXPIRES_IN
+              valueFrom:
+                configMapKeyRef:
+                  name: url-shortener-config
+                  key: JWT_REFRESH_EXPIRES_IN
+
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: url-shortener-secrets
+                  key: DATABASE_URL
+
+            - name: JWT_ACCESS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: url-shortener-secrets
+                  key: JWT_ACCESS_SECRET
+
+            - name: JWT_REFRESH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: url-shortener-secrets
+                  key: JWT_REFRESH_SECRET
+
+            - name: GOOGLE_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: url-shortener-secrets
+                  key: GOOGLE_CLIENT_ID
+
+            - name: GOOGLE_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: url-shortener-secrets
+                  key: GOOGLE_CLIENT_SECRET
+
+          # ── Liveness Probe ────────────────────────────────
+          # "Is this pod still alive?"
+          # Kubernetes checks GET /health every 30 seconds
+          # If it fails 3 times in a row → restart the pod
+          #
+          # Real world: like a security guard checking if the
+          # barista is still at their station every 30 minutes
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 3
+
+          # ── Readiness Probe ───────────────────────────────
+          # "Is this pod ready to receive traffic?"
+          # Kubernetes checks this before sending any traffic
+          # If it fails → remove pod from load balancer (but don't restart)
+          #
+          # Real world: like checking if the barista has
+          # finished their setup before opening the counter
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 3
+
+          # ── Resource Limits ───────────────────────────────
+          # How much CPU and memory this container can use
+          #
+          # requests → minimum guaranteed resources
+          # limits   → maximum allowed resources
+          #
+          # Real world: like saying a barista needs at least
+          # 1 coffee machine (request) and can use max 2 (limit)
+          resources:
+            requests:
+              cpu: "100m" # 100 millicores = 0.1 CPU core
+              memory: "128Mi" # 128 megabytes
+            limits:
+              cpu: "500m" # 500 millicores = 0.5 CPU core
+              memory: "256Mi" # 256 megabytes

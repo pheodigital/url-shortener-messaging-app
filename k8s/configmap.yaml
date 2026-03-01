@@ -1,0 +1,55 @@
+# ─── ConfigMap ────────────────────────────────────────────
+#
+# What is a ConfigMap?
+#   A ConfigMap stores non-sensitive configuration values.
+#   Think of it as a notice board on the office wall —
+#   anyone in the office can read it, nothing secret on it.
+#
+# What goes here vs Secrets?
+#   ConfigMap → PORT, NODE_ENV, queue names, URLs without passwords
+#   Secrets   → passwords, API keys, JWT secrets, connection strings
+#
+# How to apply:
+#   kubectl apply -f k8s/configmap.yaml
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: url-shortener-config
+  namespace: url-shortener
+data:
+  # ── Environment ─────────────────────────────────────────
+  NODE_ENV: "production"
+
+  # ── Ports ───────────────────────────────────────────────
+  AUTH_SERVICE_PORT: "3001"
+  URL_SERVICE_PORT: "3002"
+  ANALYTICS_SERVICE_PORT: "3003"
+
+  # ── Base URL ────────────────────────────────────────────
+  # This is the public URL of your app after ingress is set up
+  # Update this to your actual domain when you have one
+  BASE_URL: "http://url-shortener.example.com"
+
+  # ── CORS ────────────────────────────────────────────────
+  ALLOWED_ORIGIN: "http://url-shortener.example.com"
+
+  # ── RabbitMQ Queue Names ─────────────────────────────────
+  # Queue names are not sensitive — just identifiers
+  RABBITMQ_QUEUE_CLICK_EVENTS: "click_events"
+  RABBITMQ_PREFETCH_COUNT: "10"
+
+  # ── Cache ───────────────────────────────────────────────
+  CACHE_TTL_SECONDS: "86400"
+
+  # ── Rate Limiting ────────────────────────────────────────
+  RATE_LIMIT_REDIRECT_RPM: "300"
+  RATE_LIMIT_API_RPM: "60"
+
+  # ── JWT Expiry ───────────────────────────────────────────
+  JWT_ACCESS_EXPIRES_IN: "1d"
+  JWT_REFRESH_EXPIRES_IN: "7d"
+
+  # ── Google OAuth Callback ────────────────────────────────
+  # Update to your actual domain
+  GOOGLE_CALLBACK_URL: "http://url-shortener.example.com/auth/google/callback"

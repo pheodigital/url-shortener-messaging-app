@@ -1,0 +1,22 @@
+# ─── Namespace ────────────────────────────────────────────
+#
+# What is a namespace?
+#   A namespace is like a separate room inside your Kubernetes cluster.
+#   Everything for our app lives in the "url-shortener" room.
+#   This keeps our app isolated from other apps on the same cluster.
+#
+# Real world analogy:
+#   A office building has many companies (namespaces)
+#   Each company has its own floor (namespace)
+#   They share the building (cluster) but do not interfere with each other
+#
+# How to apply:
+#   kubectl apply -f k8s/namespace.yaml
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: url-shortener
+  labels:
+    app: url-shortener
+    managed-by: kubectl

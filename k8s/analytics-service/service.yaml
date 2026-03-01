@@ -1,0 +1,21 @@
+# ─── Analytics Service — Kubernetes Service ───────────────
+#
+# How to apply:
+#   kubectl apply -f k8s/analytics-service/service.yaml
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: analytics-service
+  namespace: url-shortener
+  labels:
+    app: analytics-service
+spec:
+  type: ClusterIP
+  selector:
+    app: analytics-service
+  ports:
+    - name: http
+      port: 3003
+      targetPort: 3003
+      protocol: TCP
