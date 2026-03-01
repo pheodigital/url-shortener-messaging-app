@@ -297,6 +297,37 @@ If MongoDB goes down, redirects keep working perfectly — click events queue up
 - Scale write and read loads independently
 - One service crashing doesn't affect the other
 - Foundation of event-driven microservice architecture (used at Twitter, Uber, LinkedIn)
+
+
+
+**More explanation:**
+
+- Without RabbitMQ
+- User clicks short URL
+  - → url-service handles request
+  - → url-service writes to MongoDB (waits 50ms)
+  - → url-service writes to PostgreSQL (waits 30ms)
+  - → url-service finally redirects user
+  
+- Fine for 10 users.
+- 10,000 users clicking at the same time?
+  - → Every user waits 80ms extra
+  - → Servers get overwhelmed
+  - → Website crashes  
+
+- With RabbitMQUser clicks short URL
+- → url-service handles request
+  - → url-service drops message in RabbitMQ  ← takes 1ms
+  - → url-service redirects user immediately
+  - → analytics-worker picks up message later
+  - → writes to MongoDB at its own pace
+
+- 10,000 users clicking at the same time?
+  - → Every redirect is still instant
+  - → Messages queue up safely
+  - → analytics-worker drains the queue
+  - → No data lost, no slowdown
+
 ```
 
 ---
