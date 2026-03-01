@@ -1,18 +1,16 @@
-name: CD — Deploy
+name: CD — Deploy to GKE
 
 # ─── Triggers ─────────────────────────────────────────────
 #
-# dev  → automatic on push to main (after docker.yml builds images)
-# qa   → manual trigger only
-# prod → manual trigger + requires approval in GitHub Environments
+# Automatic → triggers after docker.yml completes on main
+# Manual    → workflow_dispatch for qa and prod
 #
-# How to trigger qa or prod manually:
-#   GitHub → Actions → CD Deploy → Run workflow
-#   Select environment: qa or prod
-#   Enter the image tag to deploy (e.g. sha-abc1234)
+# How to trigger manually:
+#   GitHub → Actions → CD Deploy to GKE → Run workflow
+#   Select environment: dev, qa, or prod
+#   Enter image tag: sha-abc1234 or latest
 
 on:
-  # Automatic — triggers after docker.yml completes on main
   workflow_run:
     workflows: ["Docker Build & Push"]
     types:
@@ -20,7 +18,6 @@ on:
     branches:
       - main
 
-  # Manual — for qa and prod deployments
   workflow_dispatch:
     inputs:
       environment:
@@ -40,14 +37,32 @@ on:
 permissions:
   contents: read
   packages: read
+  id-token: write   # required for GCP Workload Identity
 
 jobs:
 
+  # ─── Skip If CI Failed ──────────────────────────────────
+  # Only deploy if the docker.yml workflow succeeded
+  # Prevents deploying broken images
+  check:
+    name: Check workflow status
+    runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    outputs:
+      should_deploy: ${{ steps.check.outputs.should_deploy }}
+    steps:
+      - name: Check if should deploy
+        id: check
+        run: echo "should_deploy=true" >> $GITHUB_OUTPUT
+
   # ─── Determine Environment ──────────────────────────────
-  # Figures out which environment to deploy to based on trigger
   setup:
     name: Setup deployment
     runs-on: ubuntu-latest
+    needs: check
+    if: needs.check.outputs.should_deploy == 'true'
     outputs:
       environment: ${{ steps.set-env.outputs.environment }}
       image_tag: ${{ steps.set-env.outputs.image_tag }}
@@ -57,127 +72,174 @@ jobs:
         id: set-env
         run: |
           if [ "${{ github.event_name }}" = "workflow_run" ]; then
-            # Automatic trigger from docker.yml — deploy to dev
             echo "environment=dev" >> $GITHUB_OUTPUT
             echo "image_tag=latest" >> $GITHUB_OUTPUT
           else
-            # Manual trigger — use selected environment and tag
             echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
             echo "image_tag=${{ github.event.inputs.image_tag }}" >> $GITHUB_OUTPUT
           fi
 
-  # ─── Deploy ─────────────────────────────────────────────
-  # Deploys all 4 services to the selected environment
-  #
-  # Each environment in GitHub has its own:
-  #   - Secrets (server host, user, SSH key)
-  #   - Protection rules (prod requires approval)
-  #
-  # Setup GitHub Environments:
-  #   Repo → Settings → Environments → New environment
-  #   Create: dev, qa, prod
-  #   For prod: add Required reviewers
+  # ─── Deploy To GKE ──────────────────────────────────────
   deploy:
-    name: Deploy to ${{ needs.setup.outputs.environment }}
+    name: Deploy to GKE (${{ needs.setup.outputs.environment }})
     runs-on: ubuntu-latest
     needs: setup
 
     # ── GitHub Environment ──────────────────────────────────
-    # This links to the GitHub Environment config
     # prod environment will pause here and wait for approval
+    # Set up at: GitHub → Settings → Environments
     environment: ${{ needs.setup.outputs.environment }}
 
     env:
       IMAGE_TAG: ${{ needs.setup.outputs.image_tag }}
       ENVIRONMENT: ${{ needs.setup.outputs.environment }}
-      REGISTRY: ghcr.io
       OWNER: ${{ github.repository_owner }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # ── Login to GHCR to pull images ────────────────────
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
+      # ── Authenticate To Google Cloud ──────────────────────
+      # Uses a Service Account key stored in GitHub secrets
+      # GKE_SA_KEY → base64 encoded service account JSON
+      #
+      # How to create service account:
+      #   GCP Console → IAM → Service Accounts → Create
+      #   Roles needed:
+      #     → Kubernetes Engine Developer
+      #     → Storage Object Viewer (to pull images from Artifact Registry if needed)
+      #   Create key → JSON → download → base64 encode:
+      #     base64 -i key.json | tr -d '\n'
+      #   Add to GitHub secrets as GKE_SA_KEY
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          credentials_json: ${{ secrets.GKE_SA_KEY }}
 
-      # ── Verify images exist before deploying ────────────
-      - name: Verify images exist
+      # ── Install gcloud + kubectl ──────────────────────────
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GKE_PROJECT_ID }}
+
+      # ── Connect To GKE Cluster ────────────────────────────
+      # Gets cluster credentials so kubectl can talk to it
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ secrets.GKE_CLUSTER_NAME }}
+          location: ${{ secrets.GKE_CLUSTER_ZONE }}
+          project_id: ${{ secrets.GKE_PROJECT_ID }}
+
+      # ── Update Image Tags In Manifests ────────────────────
+      # Replace :latest with the specific SHA tag for reproducible deploys
+      # This ensures we deploy exactly the image that was just built
+      - name: Update image tags
         run: |
-          for service in url-service auth-service analytics-worker analytics-service; do
-            echo "Checking ghcr.io/${{ env.OWNER }}/$service:${{ env.IMAGE_TAG }}"
-            docker pull ghcr.io/${{ env.OWNER }}/$service:${{ env.IMAGE_TAG }}
-            echo "✅ $service image found"
+          TAG="sha-${GITHUB_SHA::7}"
+          if [ "${{ env.IMAGE_TAG }}" != "latest" ]; then
+            TAG="${{ env.IMAGE_TAG }}"
+          fi
+
+          echo "Deploying image tag: $TAG"
+
+          # Update all deployment manifests with the correct image tag
+          for service in auth-service url-service analytics-worker analytics-service; do
+            sed -i "s|ghcr.io/${{ env.OWNER }}/$service:latest|ghcr.io/${{ env.OWNER }}/$service:$TAG|g" \
+              k8s/$service/deployment.yaml
           done
 
-      # ── Deploy via SSH ────────────────────────────────────
-      # Connects to the environment server via SSH
-      # Pulls latest images and restarts containers
-      #
-      # Required secrets per environment (set in GitHub Environments):
-      #   SERVER_HOST → IP address of the server
-      #   SERVER_USER → SSH username (e.g. ubuntu)
-      #   SERVER_SSH_KEY → private SSH key for the server
-      - name: Deploy to ${{ env.ENVIRONMENT }} server
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          script: |
-            set -e
+      # ── Create Namespace ──────────────────────────────────
+      - name: Apply namespace
+        run: kubectl apply -f k8s/namespace.yaml
 
-            echo "🚀 Deploying to ${{ env.ENVIRONMENT }}"
-            echo "📦 Image tag: ${{ env.IMAGE_TAG }}"
+      # ── Apply ConfigMap ───────────────────────────────────
+      - name: Apply configmap
+        run: kubectl apply -f k8s/configmap.yaml
 
-            # Navigate to app directory on server
-            cd ~/url-shortener
+      # ── Create Secrets ────────────────────────────────────
+      # Secrets are NOT stored in Git — they live in GitHub secrets
+      # We create the Kubernetes secret directly from GitHub secrets
+      # This way secrets.yaml never exists as a file anywhere
+      - name: Create Kubernetes secrets
+        run: |
+          kubectl create secret generic url-shortener-secrets \
+            --namespace=url-shortener \
+            --from-literal=DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+            --from-literal=REDIS_URL="${{ secrets.REDIS_URL }}" \
+            --from-literal=RABBITMQ_URL="${{ secrets.RABBITMQ_URL }}" \
+            --from-literal=MONGODB_URI="${{ secrets.MONGODB_URI }}" \
+            --from-literal=JWT_ACCESS_SECRET="${{ secrets.JWT_ACCESS_SECRET }}" \
+            --from-literal=JWT_REFRESH_SECRET="${{ secrets.JWT_REFRESH_SECRET }}" \
+            --from-literal=GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}" \
+            --from-literal=GOOGLE_CLIENT_SECRET="${{ secrets.GOOGLE_CLIENT_SECRET }}" \
+            --save-config \
+            --dry-run=client \
+            -o yaml | kubectl apply -f -
 
-            # Pull latest images from GHCR
-            docker pull ghcr.io/${{ env.OWNER }}/url-service:${{ env.IMAGE_TAG }}
-            docker pull ghcr.io/${{ env.OWNER }}/auth-service:${{ env.IMAGE_TAG }}
-            docker pull ghcr.io/${{ env.OWNER }}/analytics-worker:${{ env.IMAGE_TAG }}
-            docker pull ghcr.io/${{ env.OWNER }}/analytics-service:${{ env.IMAGE_TAG }}
+      # ── Deploy All Services ───────────────────────────────
+      - name: Deploy auth-service
+        run: |
+          kubectl apply -f k8s/auth-service/deployment.yaml
+          kubectl apply -f k8s/auth-service/service.yaml
 
-            # Update IMAGE_TAG in environment file
-            export IMAGE_TAG=${{ env.IMAGE_TAG }}
-            export OWNER=${{ env.OWNER }}
+      - name: Deploy url-service
+        run: |
+          kubectl apply -f k8s/url-service/deployment.yaml
+          kubectl apply -f k8s/url-service/service.yaml
+          kubectl apply -f k8s/url-service/hpa.yaml
 
-            # Restart services with new images
-            docker-compose pull
-            docker-compose up -d --no-build
+      - name: Deploy analytics-worker
+        run: kubectl apply -f k8s/analytics-worker/deployment.yaml
 
-            # Verify services are healthy
-            sleep 10
-            docker-compose ps
+      - name: Deploy analytics-service
+        run: |
+          kubectl apply -f k8s/analytics-service/deployment.yaml
+          kubectl apply -f k8s/analytics-service/service.yaml
 
-            echo "✅ Deployment to ${{ env.ENVIRONMENT }} complete"
+      - name: Apply ingress
+        run: kubectl apply -f k8s/ingress/ingress.yaml
 
-      # ── Post deployment health check ─────────────────────
-      - name: Health check after deployment
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          script: |
-            echo "Running health checks..."
+      # ── Wait For Rollout ──────────────────────────────────
+      # Waits until all pods are running and healthy
+      # Fails the pipeline if any deployment does not become
+      # healthy within 5 minutes
+      - name: Wait for rollouts
+        run: |
+          echo "Waiting for all deployments to roll out..."
 
-            # Wait for services to be ready
-            sleep 15
+          kubectl rollout status deployment/auth-service \
+            -n url-shortener --timeout=5m
 
-            # Check each service health endpoint via NGINX
-            curl -f http://localhost/health || exit 1
-            echo "✅ url-service healthy"
+          kubectl rollout status deployment/url-service \
+            -n url-shortener --timeout=5m
 
-            curl -f http://localhost:3001/health || exit 1
-            echo "✅ auth-service healthy"
+          kubectl rollout status deployment/analytics-worker \
+            -n url-shortener --timeout=5m
 
-            curl -f http://localhost:3003/health || exit 1
-            echo "✅ analytics-service healthy"
+          kubectl rollout status deployment/analytics-service \
+            -n url-shortener --timeout=5m
 
-            echo "✅ All services healthy — deployment successful"
+          echo "✅ All deployments rolled out successfully"
+
+      # ── Verify Pods Are Running ───────────────────────────
+      - name: Verify pods
+        run: |
+          echo "Current pod status:"
+          kubectl get pods -n url-shortener
+
+          echo "Current services:"
+          kubectl get services -n url-shortener
+
+          echo "Current ingress:"
+          kubectl get ingress -n url-shortener
+
+      # ── Post Deploy Summary ───────────────────────────────
+      - name: Deployment summary
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "✅ Deployment complete"
+          echo "   Environment : ${{ env.ENVIRONMENT }}"
+          echo "   Image tag   : ${{ env.IMAGE_TAG }}"
+          echo "   Commit      : ${{ github.sha }}"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
