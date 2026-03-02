@@ -23,14 +23,14 @@ Build a fully functional URL shortener (like bit.ly) that covers:
 
 ## 🎯 Accounts You Need — Set These Up First
 
-□ GitHub          → for code + CI/CD
-□ Docker Hub      → for Docker images (optional after GHCR)
-□ Neon            → PostgreSQL(Prisma) - (Vercel)
-□ Upstash         → Redis
-□ CloudAMQP       → RabbitMQ (LavinMQ)
-□ MongoDB Atlas   → MongoDB
-□ Google Cloud    → OAuth + GKE
-□ Railway         → deployment
+-  GitHub          → for code + CI/CD
+-  Docker Hub      → for Docker images (optional after GHCR)
+-  Neon            → PostgreSQL(Prisma) - (Vercel)
+-  Upstash         → Redis
+-  CloudAMQP       → RabbitMQ (LavinMQ)
+-  MongoDB Atlas   → MongoDB
+-  Google Cloud    → OAuth + GKE
+-  Railway         → deployment
 
 ---
 
